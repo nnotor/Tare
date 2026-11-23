@@ -218,7 +218,70 @@ async function readLabel(file) {
 function shrinkImage(file, max) {
   return new Promise((res, rej) => { const url = URL.createObjectURL(file), img = new Image(); img.onload = () => { const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement("canvas"); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k); c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); res(c); }; img.onerror = () => { URL.revokeObjectURL(url); rej(new Error("image")); }; img.src = url; });
 }
+/* Serving amount scaling */
+const SERVING_UNITS = { g: 1, ml: 1, oz: 28.3495 };
+let servState = null;
+function parseServing(text) {
+  const hits = [...String(text || "").matchAll(/(\d+(?:[.,]\d+)?)\s*(kg|grams?|g|ml|l|oz)\b/gi)].map(m => {
+    const v = Number(m[1].replace(",", ".")), u = m[2].toLowerCase();
+    if (u === "kg") return { amt: v * 1000, unit: "g" };
+    if (u === "l") return { amt: v * 1000, unit: "ml" };
+    return { amt: v, unit: u.startsWith("g") ? "g" : u };
+  }).filter(x => x.amt > 0);
+  return hits.find(x => x.unit !== "oz") || hits[0] || null;
+}
+const servIds = () => $("#sserv") ? { s: "#sserv", k: "#sk", p: "#sp", c: "#sc", f: "#sf" } : $("#cserv") ? { s: "#cserv", k: "#ck", p: "#cp", c: "#cc", f: "#cf" } : null;
+const servGrams = () => { const a = num($("#servAmt")?.value), u = $("#servUnit")?.value; return a > 0 && SERVING_UNITS[u] ? a * SERVING_UNITS[u] : 0; };
+const roundAmount = v => String(+Number(v).toFixed(2));
+function readServingBase() { const x = servState.ids; servState.base = { g: servState.curG || servGrams(), k: num($(x.k).value), p: num($(x.p).value), c: num($(x.c).value), f: num($(x.f).value) }; }
+function initServing() {
+  const ids = servIds();
+  if (!ids) { servState = null; return; }
+  const text = $(ids.s);
+  if (!$("#servAmt")) {
+    text.type = "hidden";
+    const row = document.createElement("span");
+    row.className = "servrow";
+    row.innerHTML = `<input id="servAmt" type="number" inputmode="decimal" min="0" step="any" placeholder="Amount" aria-label="Serving amount"><select id="servUnit" aria-label="Serving unit"><option value="g">g</option><option value="ml">ml</option><option value="oz">oz</option></select>`;
+    text.after(row);
+    for (const key of ["k", "p", "c", "f"]) $(ids[key]).dataset.servMacro = "1";
+  }
+  const parsed = parseServing(text.value);
+  $("#servAmt").value = parsed ? roundAmount(parsed.amt) : "";
+  $("#servUnit").value = parsed?.unit || "g";
+  const startG = parsed ? parsed.amt * SERVING_UNITS[parsed.unit] : 0;
+  servState = { ids, origG: startG, curG: startG, base: null };
+  readServingBase();
+}
+function applyServingAmount() {
+  if (!servState) return;
+  const g = servGrams(), x = servState.ids;
+  if (!(g > 0)) return;
+  servState.curG = g;
+  $(x.s).value = `${roundAmount($("#servAmt").value)} ${$("#servUnit").value}`;
+  if (!servState.origG) servState.origG = g;
+  if (!servState.base.g) { servState.base.g = g; return; }
+  const factor = g / servState.base.g, b = servState.base, filled = id => $(id).value !== "";
+  if (filled(x.k)) $(x.k).value = Math.round(b.k * factor);
+  for (const key of ["p", "c", "f"]) if (filled(x[key])) $(x[key]).value = +(b[key] * factor).toFixed(1);
+}
+function changeServingUnit(el) {
+  if (!servState) return;
+  const amt = $("#servAmt");
+  if (servState.curG > 0 && amt.value !== "") {
+    amt.value = roundAmount(servState.curG / SERVING_UNITS[el.value]);
+    $(servState.ids.s).value = `${amt.value} ${el.value}`;
+  }
+}
+function scaledMicros(n) {
+  if (!n) return n;
+  return servState?.origG > 0 && servState.curG > 0 ? scaleN(n, servState.curG / servState.origG) : n;
+}
 function afterDlg() {
+  fillLabelPrefill();
+  initServing();
+}
+function fillLabelPrefill() {
   if (M?.tab !== "custom" || !M.prefill) return;
   const f = M.prefill, set = (id, v) => { const el = $(id); if (el && v != null) el.value = v; };
   set("#cserv", String(f.serv).slice(0, 40)); set("#ck", f.kcal); set("#cp", f.p); set("#cc", f.c); set("#cf", f.f);
@@ -351,6 +414,8 @@ document.addEventListener("click", ev => {
 document.addEventListener("input", ev => {
   const t = ev.target;
   if (t.id === "q" && M) { M.online = null; M.onlineMsg = ""; refreshResults(); }
+  if (t.id === "servAmt") applyServingAmount();
+  if (t.dataset.servMacro && servState) readServingBase();
   if (!M?.recipe) return;
   if (t.id === "rname") M.recipe.name = t.value;
   if (t.id === "rserv" || t.dataset.ring != null) {
@@ -361,6 +426,7 @@ document.addEventListener("input", ev => {
 });
 document.addEventListener("change", ev => {
   const t = ev.target;
+  if (t.id === "servUnit") changeServingUnit(t);
   if (t.id === "coachSwitch") syncCoachFields();
   if (t.id === "useTargets") $("#trackTargetRow").hidden = !t.checked;
   if (t.id === "pmode") { $("#nudgeRow").hidden = t.value !== "collab"; $("#manualRow").hidden = t.value !== "manual"; }

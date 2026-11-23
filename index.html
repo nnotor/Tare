@@ -102,6 +102,7 @@ dialog::backdrop{background:rgba(5,15,20,.55)}
 .warn{background:var(--warn-bg);color:var(--warn);padding:8px 10px;border-radius:6px;font-size:13px}
 .err{color:var(--bad);margin:0}
 .filebtn{display:inline-block}
+.servrow{display:grid;grid-template-columns:minmax(0,1fr) 76px;gap:6px}
 .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
 .weekgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(84px,1fr));gap:8px;margin-top:6px}
 .mealtools{display:flex;gap:14px;flex-wrap:wrap}
@@ -466,13 +467,13 @@ document.addEventListener("click",async ev=>{const b=ev.target.closest("[data-ac
 document.addEventListener("input",ev=>{if(ev.target.id==="q"){M.q=ev.target.value;M.sel=null;$("#res").innerHTML=resultsHTML();$("#chooser").innerHTML=""}if(ev.target.id==="qty")updateQty()});
 document.addEventListener("change",ev=>{if(ev.target.dataset.change==="skip"){day(cursor).skip=ev.target.checked;touch(cursor)}
   if(ev.target.id==="scanPhoto"&&ev.target.files[0])scanImage(ev.target.files[0]);
-  if(ev.target.id==="sbasis"){const x=M.scan.food.bases.find(o=>o.id===ev.target.value),v=n=>n==null?"":n;$("#sserv").value=x.label;$("#sk").value=v(x.kcal);$("#sp").value=v(x.p);$("#sc").value=v(x.c);$("#sf").value=v(x.f);$("#scanWarn").textContent=basisWarning(x)}
+  if(ev.target.id==="sbasis"){const x=M.scan.food.bases.find(o=>o.id===ev.target.value),v=n=>n==null?"":n;$("#sserv").value=x.label;$("#sk").value=v(x.kcal);$("#sp").value=v(x.p);$("#sc").value=v(x.c);$("#sf").value=v(x.f);$("#scanWarn").textContent=basisWarning(x);initServing()}
   if(ev.target.id==="unit"){const u=ev.target.value,old=($("#hu").textContent==="cm")?"kg":"lb";if(u!==old){const h=$("#height"),w=$("#kg");if(h.value)h.value=u==="kg"?Math.round(h.value*2.54):(h.value/2.54).toFixed(1);if(w.value)w.value=(u==="kg"?w.value/LB:w.value*LB).toFixed(1);$("#hu").textContent=u==="kg"?"cm":"in";$("#wu").textContent=u}}});
 document.addEventListener("submit",ev=>{ev.preventDefault();const f=ev.target,t=f.dataset.form,d=new FormData(f);
   if(t==="weight"){const v=num(d.get("w")),x=day(cursor);if(v>0)x.w=+fromUser(v).toFixed(3);else delete x.w;touch(cursor);render()}
-  if(t==="custom"){const food={name:String(d.get("name")).trim(),serv:String(d.get("serv")).trim(),kcal:num(d.get("kcal")),p:num(d.get("p")),c:num(d.get("c")),f:num(d.get("f"))};if(M.prefill?.n)food.n=M.prefill.n;if(d.get("save")){S.custom=[food,...S.custom.filter(c=>c.name!==food.name)].slice(0,300);touch()}addEntry(food);$("#dlg").close();render()}
+  if(t==="custom"){const food={name:String(d.get("name")).trim(),serv:String(d.get("serv")).trim(),kcal:num(d.get("kcal")),p:num(d.get("p")),c:num(d.get("c")),f:num(d.get("f"))};if(M.prefill?.n)food.n=scaledMicros(M.prefill.n);if(d.get("save")){S.custom=[food,...S.custom.filter(c=>c.name!==food.name)].slice(0,300);touch()}addEntry(food);$("#dlg").close();render()}
   if(t==="barcode"){const raw=String(d.get("code")||""),code=normalizeCode(raw);if(code)lookup(code);else setScan({state:"idle",typed:raw,msg:"That barcode is not valid. Check the digits and try again."})}
-  if(t==="scan"){const code=M.scan.code,qty=num(d.get("qty")),food={name:String(d.get("name")).trim(),serv:String(d.get("serv")).trim(),kcal:num(d.get("kcal")),p:num(d.get("p")),c:num(d.get("c")),f:num(d.get("f")),barcode:code};const chosen=M.scan.food.bases.find(b=>b.id===d.get("basis"))||M.scan.food.bases[0];if(chosen?.n)food.n=chosen.n;if(!(qty>0)||!food.name)return;if(d.get("save")){S.custom=[food,...S.custom.filter(c=>c.barcode!==code)].slice(0,300);touch()}addEntry(food,qty);$("#dlg").close();render()}
+  if(t==="scan"){const code=M.scan.code,qty=num(d.get("qty")),food={name:String(d.get("name")).trim(),serv:String(d.get("serv")).trim(),kcal:num(d.get("kcal")),p:num(d.get("p")),c:num(d.get("c")),f:num(d.get("f")),barcode:code};const chosen=M.scan.food.bases.find(b=>b.id===d.get("basis"))||M.scan.food.bases[0];if(chosen?.n)food.n=scaledMicros(chosen.n);if(!(qty>0)||!food.name)return;if(d.get("save")){S.custom=[food,...S.custom.filter(c=>c.barcode!==code)].slice(0,300);touch()}addEntry(food,qty);$("#dlg").close();render()}
   if(t==="plan"){const u=d.get("unit"),off=d.get("coaching")==="off",h=num(d.get("height")),w=num(d.get("weight")),kg=u==="kg"?w:w/LB,was=S.demo;if(was)S={demo:false,profile:null,days:{},custom:[]};
     const old=S.profile||{},lastMode=old.mode&&old.mode!=="off"?old.mode:old.lastMode;
     S.profile=off?{...old,unit:u,mode:"off",lastMode,startKg:old.startKg||(kg>0?kg:undefined)}:{...old,unit:u,mode:old.mode==="off"?(old.lastMode||"coached"):old.mode,sex:d.get("sex"),age:num(d.get("age")),heightCm:u==="kg"?h:h*2.54,activity:num(d.get("activity")),goal:num(d.get("goal")),protein:num(d.get("protein")),startKg:old.startKg||kg};
