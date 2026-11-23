@@ -16,8 +16,12 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <style>
-:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+:root{--safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);--safe-left:env(safe-area-inset-left,0px);--safe-right:env(safe-area-inset-right,0px);--status:var(--bg);padding-top:var(--safe-top);padding-bottom:var(--safe-bottom);color-scheme:light;-webkit-text-size-adjust:100%}
+@media (display-mode:standalone){:root{--status:#10212b}}
 body{margin:0}img{max-width:100%}[hidden]{display:none!important}
+body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);background:var(--status);z-index:10}
+body:has(dialog[open]){overflow:hidden}
+button,label,select,input{touch-action:manipulation}
 /* Layout concept: a food-label panel anchors each day, with the log and the coach's numbers beside it. */
 :root{--bg:#eef2f4;--panel:#fff;--ink:#10212b;--muted:#566a75;--line:#cdd8dd;--accent:#0b5fd6;--on-accent:#fff;--protein:#0b8378;--carbs:#b86e00;--fat:#8a3f9e;--warn-bg:#fff2d6;--warn:#7a4b00;--bad:#b3261e;
 --display:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
@@ -79,7 +83,12 @@ h2{font:800 19px/1.2 var(--display);margin:0;text-wrap:balance}
 .form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .form label{display:grid;gap:3px;font-weight:700;font-size:13px;min-width:0}.form .full{grid-column:1/-1}
 .stack{display:grid;gap:12px}
-dialog{border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);width:min(560px,calc(100vw - 24px));max-height:min(720px,calc(100dvh - 24px));padding:16px}
+dialog{border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);width:min(560px,calc(100vw - 24px));max-height:min(720px,calc(100dvh - 24px));padding:0;overflow:hidden}
+dialog[open]{display:flex}
+.dlgwrap{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0;max-height:inherit}
+.dlghead{display:grid;gap:10px;flex:none;padding:16px 16px 10px;border-bottom:1px solid var(--line)}
+.dlgbody{display:grid;gap:12px;align-content:start;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:12px 16px 16px}
+#chooser:not(:empty){position:sticky;bottom:-16px;background:var(--panel);padding-block:8px;z-index:1}
 dialog::backdrop{background:rgba(5,15,20,.55)}
 .results{display:grid;max-height:330px;overflow:auto;border:1px solid var(--line);border-radius:6px}
 .result{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:8px 10px;cursor:pointer}
@@ -96,6 +105,18 @@ dialog::backdrop{background:rgba(5,15,20,.55)}
 @media (max-width:820px){.grid{grid-template-columns:minmax(0,1fr)}.stats{grid-template-columns:repeat(2,minmax(0,1fr))}
 nav{position:fixed;left:0;right:0;bottom:0;z-index:5;background:var(--panel);border-top:1px solid var(--line);justify-content:space-around;padding:6px max(16px,env(safe-area-inset-right,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}nav button{flex:1}}
 @media (max-width:420px){.form{grid-template-columns:minmax(0,1fr)}.chooser{grid-template-columns:80px minmax(0,1fr)}.chooser .btn{grid-column:1/-1}}
+@media (min-width:600px) and (max-width:820px){.grid{grid-template-columns:270px minmax(0,1fr)}.stats{grid-template-columns:repeat(4,minmax(0,1fr))}.stat b{font-size:22px}}
+@media (max-width:820px),(pointer:coarse){
+input,select,textarea{font-size:16px}
+.btn{min-height:44px}.btn.small{min-height:38px}.icon{min-width:44px;min-height:44px}nav button{min-height:44px}.seg button{min-height:38px}
+dialog{position:fixed;inset:var(--vv-top,0px) 0 auto 0;margin:0;width:100%;max-width:none;height:var(--app-h,100dvh);max-height:none;border:0;border-radius:0}
+dialog::before{content:"";position:absolute;inset:0 0 auto;height:var(--safe-top);background:var(--status);z-index:2}
+.dlghead{padding-top:calc(var(--safe-top) + 8px);padding-left:max(16px,var(--safe-left),calc((100% - 620px)/2));padding-right:max(16px,var(--safe-right),calc((100% - 620px)/2))}
+.dlgbody{padding-left:max(16px,var(--safe-left),calc((100% - 620px)/2));padding-right:max(16px,var(--safe-right),calc((100% - 620px)/2));padding-bottom:calc(16px + var(--safe-bottom))}
+#chooser:not(:empty){bottom:calc(-16px - var(--safe-bottom))}
+.results{max-height:none}
+.viewfinder{max-height:48dvh}
+}
 @media (prefers-reduced-motion:no-preference){.bar i{transition:width .25s}}
 </style>
 </head>
@@ -339,7 +360,7 @@ function renderDlg(){const tab=M.tab;let body="";
   if(tab==="search")body=`<input id="q" type="search" placeholder="Search foods" aria-label="Search foods" value="${esc(M.q)}"><div class="results" id="res">${resultsHTML()}</div><div id="chooser">${chooserHTML()}</div>`;
   if(tab==="scan")body=scanBody();
   if(tab==="custom")body=`<form class="form" data-form="custom"><label class="full">Name<input id="cname" name="name" required maxlength="80"></label><label>Serving<input id="cserv" name="serv" value="1 serving" required maxlength="40"></label><label>Calories<input id="ck" name="kcal" type="number" min="0" step="1" required></label><label>Protein (g)<input id="cp" name="p" type="number" min="0" step="0.1" value="0"></label><label>Carbs (g)<input id="cc" name="c" type="number" min="0" step="0.1" value="0"></label><label>Fat (g)<input id="cf" name="f" type="number" min="0" step="0.1" value="0"></label><label style="display:flex;align-items:center;gap:7px"><input id="csave" name="save" type="checkbox" checked style="width:auto">Save to my foods</label><div class="full"><button class="btn primary">Add food</button></div></form>`;
-  $("#dlg").innerHTML=`<div class="stack"><div class="mealhead"><h2>Add to ${esc(M.meal)}</h2><button class="icon" data-act="close" aria-label="Close">×</button></div><div class="seg" role="group" aria-label="Add method">${[["search","Search"],["scan","Scan"],["custom","Custom"]].map(t=>`<button type="button" data-act="tab" data-t="${t[0]}" aria-pressed="${tab===t[0]}">${t[1]}</button>`).join("")}</div>${body}</div>`;updateQty()}
+  $("#dlg").innerHTML=`<div class="dlgwrap"><div class="dlghead"><div class="mealhead"><h2>Add to ${esc(M.meal)}</h2><button class="icon" data-act="close" aria-label="Close">×</button></div><div class="seg" role="group" aria-label="Add method">${[["search","Search"],["scan","Scan"],["custom","Custom"]].map(t=>`<button type="button" data-act="tab" data-t="${t[0]}" aria-pressed="${tab===t[0]}">${t[1]}</button>`).join("")}</div></div><div class="dlgbody">${body}</div></div>`;updateQty()}
 function addEntry(f,q=1){const x=day(cursor);x.foods.push({id:uid(),name:String(f.name).slice(0,100),serv:String(f.serv||"1 serving").slice(0,50),qty:q,meal:M.meal,kcal:Math.round(f.kcal*q),p:+(f.p*q).toFixed(1),c:+(f.c*q).toFixed(1),f:+(f.f*q).toFixed(1)});touch(cursor)}
 
 /* Barcode scanning */
@@ -444,6 +465,9 @@ addEventListener("hashchange",()=>{route();render()});
 let rt;addEventListener("resize",()=>{clearTimeout(rt);rt=setTimeout(()=>{if(view==="trends")drawCharts()},150)});
 {const dlg=$("#dlg"),nativeClose=dlg.close.bind(dlg);dlg.close=(...args)=>{stopScan();nativeClose(...args)};dlg.addEventListener("cancel",()=>stopScan());dlg.addEventListener("close",()=>stopScan())}
 addEventListener("pagehide",()=>stopScan());
+// Keep the add-food window above the keyboard and matched to the current fold state.
+function syncViewport(){const v=window.visualViewport;if(!v)return;const s=document.documentElement.style;s.setProperty("--app-h",Math.round(v.height)+"px");s.setProperty("--vv-top",Math.round(v.offsetTop)+"px")}
+if(window.visualViewport){visualViewport.addEventListener("resize",syncViewport);visualViewport.addEventListener("scroll",syncViewport);addEventListener("orientationchange",syncViewport);syncViewport()}
 document.addEventListener("visibilitychange",()=>{if(document.hidden&&M&&["live","starting"].includes(M.scan?.state)){stopScan();setScan({state:"idle"})}});
 load();
 if("serviceWorker" in navigator&&(location.protocol==="https:"||location.hostname==="localhost"))addEventListener("load",()=>navigator.serviceWorker.register("sw.js",{updateViaCache:"none"}).then(()=>{if(view==="plan")showOffline()}).catch(e=>{swError=`${e?.name||"Error"}: ${e?.message||""}`;if(view==="plan")showOffline()}));
