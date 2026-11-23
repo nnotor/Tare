@@ -1,4 +1,4 @@
-const CACHE = "tare-v2";
+const CACHE = "tare-v3";
 const SCANNER = "https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js";
 const SHELL = ["./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 const INDEX = new URL("./index.html", self.location.href).href;
@@ -18,8 +18,21 @@ async function refresh(key) {
 
 async function savedOrNetwork(key, request) {
   const cache = await caches.open(CACHE);
-  const hit = await cache.match(key, { ignoreSearch: true });
-  return hit || fetch(request);
+  const hit = await cache.match(key, { ignoreSearch: true, ignoreVary: true });
+  if (hit) {
+    if (request.mode !== "navigate") return hit;
+    // Safari is more reliable with a fresh page response than a stored one.
+    return new Response(await hit.blob(), { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
+  }
+  try {
+    return await fetch(request);
+  } catch (error) {
+    if (request.mode !== "navigate") throw error;
+    return new Response(
+      '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tare</title><body style="font:16px system-ui;padding:32px 20px"><h1>Tare is not saved offline yet</h1><p>Connect to the internet, open Tare, then go to Plan and tap Prepare for offline.</p></body>',
+      { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } }
+    );
+  }
 }
 
 self.addEventListener("install", event => {
@@ -56,7 +69,7 @@ self.addEventListener("fetch", event => {
   if (url.href === SCANNER) {
     event.respondWith((async () => {
       const cache = await caches.open(CACHE);
-      const hit = await cache.match(SCANNER);
+      const hit = await cache.match(SCANNER, { ignoreVary: true });
       if (hit) return hit;
       const response = await fetch(request);
       if (response.ok) await cache.put(SCANNER, response.clone());
