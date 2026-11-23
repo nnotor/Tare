@@ -13,16 +13,22 @@ Tare tracks calories and macros, scans packaged foods, estimates your actual ene
 - Estimates daily expenditure from your logged food and weight trend over the last 28 days
 - Starts with the Mifflin-St Jeor formula, then shifts toward your real data as you log
 - Offers updated calorie, protein, carb, and fat targets at a weekly check-in
+- Includes Coached, Collaborative, and Manual program modes
+- Supports balanced, low-carb, keto, and carb-focused plans
+- Sets high, low, normal, and fasting days while keeping your weekly average
 - Supports goals from losing 1% to gaining 0.5% of body weight per week
+- Estimates when you will reach a goal weight
 - Lets you leave incomplete days out of the estimate
 
 ### Fast food logging
 
 - Scan EAN-13, EAN-8, UPC-A, and UPC-E barcodes with the live camera or a photo
 - Look up new products through Open Food Facts and review the values before logging
-- Search 102 built-in foods, recent foods, and your saved foods
-- Add custom foods and remember corrected barcode values
-- Log by meal, adjust servings, and copy the previous day
+- Read Nutrition Facts labels from a photo on your device
+- Search 102 built-in foods, your saved foods, and Open Food Facts
+- Get smart suggestions based on what you usually eat at each meal
+- Build recipes, add custom foods, and remember corrected barcode values
+- Copy and paste foods, meals, or entire days
 
 ### Progress trends
 
@@ -30,6 +36,16 @@ Tare tracks calories and macros, scans packaged foods, estimates your actual ene
 - See calories eaten alongside estimated expenditure
 - Review weekly weight change and average intake
 - View ranges from 2 weeks to 1 year
+- Track logging and weigh-in streaks
+- Compare 7-day, 30-day, and all-time nutrition averages
+- See top food contributors and calorie timing by meal
+- Review micronutrients when food data includes them
+
+### Body tracking
+
+- Log steps and body measurements
+- Track period days and estimate cycle length
+- Keep progress photos on your device
 
 ### Built for phones
 
@@ -62,14 +78,14 @@ Some requests still leave your device:
 | Service | When it is used | What it receives |
 | --- | --- | --- |
 | GitHub Pages | Loading or updating the app | Standard connection details, such as IP address and browser type |
-| jsDelivr | Downloading the scanner library | Standard connection details |
-| Open Food Facts | Looking up a product you have not saved | The barcode number and standard connection details |
+| jsDelivr | Downloading the barcode or label reader | Standard connection details |
+| Open Food Facts | Looking up a new barcode or using **Search online** | The barcode number or search text, plus standard connection details |
 
-Camera images are processed on your device and are not uploaded by Tare.
+Camera images, label photos, and progress photos are processed on your device and are not uploaded by Tare. If your browser offers the optional **Speak** button, its speech service may process your voice.
 
 ## Back up your data
 
-Because your log exists only on your device, clearing browser data or removing the home-screen app can erase it. Use **Plan > Back up** regularly and keep the file somewhere private. Backup files are not encrypted.
+Because your log exists only on your device, clearing browser data or removing the home-screen app can erase it. Use **Plan > Back up** regularly and keep the file somewhere private. Backup files are not encrypted and do not include progress photos.
 
 ## How the estimate works
 
@@ -81,6 +97,7 @@ Accurate food logging and regular weigh-ins produce the best estimates.
 
 - HTML, CSS, and JavaScript with no build step
 - [ZXing](https://github.com/zxing-js/library) for barcode reading
+- [Tesseract.js](https://github.com/naptha/tesseract.js) for label reading
 - [Open Food Facts](https://world.openfoodfacts.org/) for product data
 - A service worker for offline use
 
