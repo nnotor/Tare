@@ -1,9 +1,43 @@
-const CACHE = "tare-v1";
+const CACHE = "tare-v2";
 const SCANNER = "https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js";
-const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
+const SHELL = ["./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
+const INDEX = new URL("./index.html", self.location.href).href;
+
+// Save a fresh copy, leaving the existing one in place if the network fails.
+async function refresh(key) {
+  try {
+    const response = await fetch(key, { cache: "no-cache" });
+    if (response.ok && !response.redirected) {
+      const cache = await caches.open(CACHE);
+      await cache.put(key, response.clone());
+    }
+  } catch (error) {
+    // Offline. The saved copy keeps working.
+  }
+}
+
+async function savedOrNetwork(key, request) {
+  const cache = await caches.open(CACHE);
+  const hit = await cache.match(key, { ignoreSearch: true });
+  return hit || fetch(request);
+}
 
 self.addEventListener("install", event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    await Promise.all(SHELL.map(async path => {
+      const key = new URL(path, self.location.href).href;
+      const response = await fetch(key, { cache: "reload" });
+      if (!response.ok || response.redirected) throw new Error("Could not save " + path);
+      await cache.put(key, response);
+    }));
+    // Scanner code is useful offline, but the app can still install without it.
+    try {
+      const response = await fetch(SCANNER, { mode: "cors", credentials: "omit" });
+      if (response.ok) await cache.put(SCANNER, response);
+    } catch (error) {}
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener("activate", event => {
@@ -19,31 +53,31 @@ self.addEventListener("fetch", event => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
 
-  // The pinned scanner library never changes, so keep it for offline scanning.
   if (url.href === SCANNER) {
-    event.respondWith(caches.open(CACHE).then(async cache => {
-      const hit = await cache.match(request);
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE);
+      const hit = await cache.match(SCANNER);
       if (hit) return hit;
       const response = await fetch(request);
-      if (response.ok) cache.put(request, response.clone());
+      if (response.ok) await cache.put(SCANNER, response.clone());
       return response;
-    }));
+    })());
     return;
   }
 
   // Product lookups and every other outside request go straight to the network.
   if (url.origin !== self.location.origin) return;
 
-  // Use the newest app when online and the saved copy when offline.
-  event.respondWith(
-    fetch(request)
-      .then(response => {
-        if (response.ok) {
-          const copy = response.clone();
-          event.waitUntil(caches.open(CACHE).then(cache => cache.put(request, copy)));
-        }
-        return response;
-      })
-      .catch(async () => (await caches.match(request)) || (request.mode === "navigate" ? caches.match("./index.html") : Response.error()))
-  );
+  // Open instantly from the saved app, then fetch any update for the next launch.
+  if (request.mode === "navigate") {
+    event.respondWith(savedOrNetwork(INDEX, request));
+    event.waitUntil(refresh(INDEX));
+    return;
+  }
+
+  const key = url.origin + url.pathname;
+  if (SHELL.some(path => new URL(path, self.location.href).href === key)) {
+    event.respondWith(savedOrNetwork(key, request));
+    event.waitUntil(refresh(key));
+  }
 });

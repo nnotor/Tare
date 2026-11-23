@@ -1,0 +1,18 @@
+# Personal data
+tare-backup-*.json
+tare-export-*.json
+*backup*.json
+
+# Older Claude version of the app
+tare.html
+
+# Local tools and secrets
+.claude/
+.env
+.env.*
+*.log
+
+# System files
+Thumbs.db
+Desktop.ini
+.DS_Store
