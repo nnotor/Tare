@@ -310,6 +310,53 @@ function saveRecipe(addIt) {
   $("#dlg").close(); render();
 }
 
+/* Edit logged foods */
+let editing = null;
+function openEdit(id) {
+  const e = peek(cursor).foods.find(x => x.id === id);
+  if (!e) return;
+  const q = e.qty > 0 ? e.qty : 1, per = x => +(num(x) / q).toFixed(2);
+  M = { meal: e.meal, tab: "edit", q: "", sel: null, scan: { state: "idle" } };
+  editing = { id, date: cursor, perN: e.n ? scaleN(e.n, 1 / q) : undefined, confirmDelete: false };
+  $("#dlg").innerHTML = `<div class="dlgwrap"><div class="dlghead"><div class="mealhead"><h2>Edit food</h2><button class="icon" data-act="close" aria-label="Close">×</button></div></div><div class="dlgbody"><form class="form" data-form="editentry">
+  <label class="full">Name<input id="ename" name="name" required maxlength="100" value="${esc(e.name)}"></label>
+  <label>Meal<select id="emeal" name="meal">${MEALS.map(m => opt(m, m, e.meal)).join("")}</select></label>
+  <label>Date<input id="edate" name="date" type="date" required max="${today()}" value="${esc(cursor)}"></label>
+  <label>Serving<input id="cserv" name="serv" required maxlength="50" value="${esc(e.serv)}"></label>
+  <label>Servings eaten<input id="eqty" name="qty" type="number" min="0.01" step="any" inputmode="decimal" required value="${q}"></label>
+  <label>Calories per serving<input id="ck" name="kcal" type="number" min="0" step="any" inputmode="decimal" required value="${per(e.kcal)}"></label>
+  <label>Protein (g)<input id="cp" name="p" type="number" min="0" step="any" inputmode="decimal" required value="${per(e.p)}"></label>
+  <label>Carbs (g)<input id="cc" name="c" type="number" min="0" step="any" inputmode="decimal" required value="${per(e.c)}"></label>
+  <label>Fat (g)<input id="cf" name="f" type="number" min="0" step="any" inputmode="decimal" required value="${per(e.f)}"></label>
+  <p class="mono muted full" id="editTotal" style="margin:0"></p><p class="err full" id="editErr" hidden></p>
+  <div class="full" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary">Save changes</button><button type="button" class="btn danger" id="editDelete" data-pro="editdel">Delete food</button></div></form></div></div>`;
+  $("#dlg").showModal();
+  initServing();
+  updateEditTotal();
+}
+function updateEditTotal() {
+  const el = $("#editTotal"); if (!el) return;
+  const q = num($("#eqty").value), v = id => num($(id).value) * q;
+  el.textContent = `Total: ${fmt(v("#ck"))} kcal · ${Math.round(v("#cp"))}P ${Math.round(v("#cc"))}C ${Math.round(v("#cf"))}F`;
+}
+function saveEdit(d) {
+  const err = $("#editErr"), fail = text => { err.textContent = text; err.hidden = false; };
+  const from = peek(editing.date), index = from.foods.findIndex(x => x.id === editing.id), date = String(d.get("date")), qty = num(d.get("qty")), name = String(d.get("name")).trim();
+  if (index < 0) return fail("This food is no longer in your log.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date > today()) return fail("Choose today or a past date.");
+  if (!(qty > 0) || !name) return fail("Enter a name and a serving count.");
+  const e = from.foods[index], perN = scaledMicros(editing.perN), next = { ...e, name: name.slice(0, 100), serv: String(d.get("serv")).trim().slice(0, 50), qty, meal: MEALS.includes(d.get("meal")) ? d.get("meal") : e.meal, kcal: Math.round(num(d.get("kcal")) * qty), p: +(num(d.get("p")) * qty).toFixed(1), c: +(num(d.get("c")) * qty).toFixed(1), f: +(num(d.get("f")) * qty).toFixed(1) };
+  if (perN) next.n = scaleN(perN, qty); else delete next.n;
+  if (date === editing.date) from.foods[index] = next;
+  else { from.foods.splice(index, 1); day(date).foods.push(next); }
+  touch(date);
+  const moved = date !== editing.date ? `Moved to ${short(date)}` : "";
+  editing = null;
+  $("#dlg").close();
+  render();
+  if (moved) setSave(moved);
+}
+
 /* Copy and paste */
 const copyItem = e => { const { id, ...rest } = e; return rest; };
 function dayTools(canCopy) {
@@ -400,6 +447,11 @@ document.addEventListener("click", ev => {
   const a = b.dataset.pro;
   if (a === "online") searchOnline();
   if (a === "irange") { insightRange = b.dataset.r === "all" ? "all" : +b.dataset.r; render(); }
+  if (a === "editentry") openEdit(b.dataset.id);
+  if (a === "editdel" && editing) {
+    if (!editing.confirmDelete) { editing.confirmDelete = true; b.textContent = "Confirm delete"; return; }
+    const x = day(editing.date); x.foods = x.foods.filter(e => e.id !== editing.id); touch(editing.date); editing = null; $("#dlg").close(); render();
+  }
   if (a === "copyentry") { const e = peek(cursor).foods.find(x => x.id === b.dataset.id); if (e) { clip = { type: "food", items: [copyItem(e)] }; setSave("Food copied"); render(); } }
   if (a === "copymeal") { clip = { type: "meal", items: peek(cursor).foods.filter(e => e.meal === b.dataset.meal).map(copyItem) }; setSave("Meal copied"); render(); }
   if (a === "copyday") { clip = { type: "day", items: peek(cursor).foods.map(copyItem) }; setSave("Day copied"); render(); }
@@ -416,6 +468,7 @@ document.addEventListener("input", ev => {
   if (t.id === "q" && M) { M.online = null; M.onlineMsg = ""; refreshResults(); }
   if (t.id === "servAmt") applyServingAmount();
   if (t.dataset.servMacro && servState) readServingBase();
+  if ($("#editTotal")) updateEditTotal();
   if (!M?.recipe) return;
   if (t.id === "rname") M.recipe.name = t.value;
   if (t.id === "rserv" || t.dataset.ring != null) {
@@ -446,6 +499,7 @@ document.addEventListener("submit", ev => {
     if (goalW > 0) p.goalKg = +fromUser(goalW).toFixed(3); else delete p.goalKg;
     p.plan = targets(); touch(); render();
   }
+  if (t === "editentry" && editing) saveEdit(d);
   if (t === "tracktargets") {
     const p = S.profile, use = !!d.get("use"), err = $("#trackErr");
     if (use) {
