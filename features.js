@@ -252,6 +252,7 @@ function initServing() {
   const startG = parsed ? parsed.amt * SERVING_UNITS[parsed.unit] : 0;
   servState = { ids, origG: startG, curG: startG, base: null };
   readServingBase();
+  mountFormMicros();
 }
 function applyServingAmount() {
   if (!servState) return;
@@ -310,6 +311,78 @@ function saveRecipe(addIt) {
   $("#dlg").close(); render();
 }
 
+/* Micronutrient details */
+const MICRO_LIMITS = new Set(["sugar", "satfat", "sodium", "chol"]);
+const microAmount = (v, m) => `${v >= 100 ? fmt(v) : v >= 10 ? Math.round(v) : +v.toFixed(1)} ${m.u}`;
+function microRows(values, onlyKeys) {
+  return MICROS.filter(m => !onlyKeys || onlyKeys.includes(m.k)).map(m => {
+    const v = values[m.k], has = v != null, pct = has ? v / m.dv * 100 : 0, over = MICRO_LIMITS.has(m.k) && pct > 100;
+    return `<div class="microrow"><span>${m.label}</span><b>${has ? microAmount(v, m) : "–"}</b><em>${has ? Math.round(pct) + "%" : ""}</em><div class="bar"><i style="width:${clamp(pct, 0, 100)}%;background:var(${over ? "--bad" : MICRO_LIMITS.has(m.k) ? "--fat" : "--carbs"})"></i></div></div>`;
+  }).join("");
+}
+function setMicroPanel(selector, n, factor = 1) {
+  const host = $(selector); if (!host) return;
+  const open = !!host.querySelector("details")?.open, values = n ? scaleN(n, factor) : {}, count = Object.keys(values).length;
+  host.innerHTML = count
+    ? `<details class="micropanel" ${open ? "open" : ""}><summary>Micronutrients <span>${count} listed</span></summary><div class="microlist">${microRows(values, MICROS.filter(m => values[m.k] != null).map(m => m.k))}</div><p>Percentages use FDA Daily Values.</p></details>`
+    : `<p class="micronone">No micronutrient data for this food.</p>`;
+}
+function currentFormMicros() {
+  if ($("#editTotal")) return editing?.perN;
+  if ($("#sserv")) { const foods = M?.scan?.food?.bases || [], id = $("#sbasis")?.value; return (foods.find(b => b.id === id) || foods[0])?.n; }
+  return M?.prefill?.n;
+}
+function refreshFormMicros() {
+  if (!$("#formMicro")) return;
+  const q = num(($("#sqty") || $("#eqty"))?.value, 1) || 1;
+  setMicroPanel("#formMicro", scaledMicros(currentFormMicros()), q);
+}
+function mountFormMicros() {
+  if (!$("#sserv") && !$("#editTotal") && !M?.prefill) return;
+  if (!$("#formMicro")) {
+    const before = $("#scanWarn") || $("#editTotal") || $("[data-form=custom] .full:last-child");
+    if (!before) return;
+    const host = document.createElement("div"); host.id = "formMicro"; host.className = "full"; before.before(host);
+  }
+  refreshFormMicros();
+}
+let microsExpanded = false;
+function microsCard(x) {
+  const foods = x.foods || [], withData = foods.filter(e => e.n && Object.keys(e.n).length).length, totals = {};
+  for (const e of foods) for (const k in e.n || {}) totals[k] = (totals[k] || 0) + num(e.n[k]);
+  const keys = microsExpanded ? null : ["fiber", "sugar", "satfat", "sodium"];
+  const note = !foods.length ? "Log food to see micronutrients." : !withData ? "None of today's foods include micronutrient data. Scanned products and labels usually do." : withData < foods.length ? `Based on ${withData} of ${foods.length} foods, so true totals may be higher.` : `Based on all ${foods.length} foods.`;
+  return `<section class="card microcard"><div class="mealtitle"><h3>Micronutrients</h3><button class="link" data-pro="microtoggle" aria-expanded="${microsExpanded}">${microsExpanded ? "Show less" : "Show all"}</button></div><div class="microlist">${microRows(totals, keys)}</div><p class="micronote">${esc(note)}</p></section>`;
+}
+
+/* Manual macro goals */
+function openGoals() {
+  const p = S.profile, g = p.plan || {}, off = coachingOff(), manual = p.mode === "manual";
+  M = { meal: "Goals", tab: "goals", q: "", sel: null, scan: { state: "idle" } };
+  const value = v => v ? v : "";
+  $("#dlg").innerHTML = `<div class="dlgwrap"><div class="dlghead"><div class="mealhead"><h2>Macro goals</h2><button class="icon" data-act="close" aria-label="Close">×</button></div></div><div class="dlgbody"><form class="form" data-form="goals">
+  <label class="full">Protein (g)<input id="gp" name="p" type="number" inputmode="numeric" min="0" max="500" step="1" required value="${value(g.p)}"></label>
+  <label class="full">Carbs (g)<input id="gc" name="c" type="number" inputmode="numeric" min="0" max="1000" step="1" required value="${value(g.c)}"></label>
+  <label class="full">Fat (g)<input id="gf" name="f" type="number" inputmode="numeric" min="0" max="400" step="1" required value="${value(g.f)}"></label>
+  <div class="goaltotal full"><span>Daily calories</span><b id="gKcal">0</b></div>
+  ${off || manual ? "" : `<p class="warn full" style="margin:0">Saving switches coaching to Manual, so weekly check-ins will stop changing your targets. You can return to the coach here anytime.</p>`}
+  <p class="err full" id="goalErr" hidden></p>
+  <div class="full" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary">Save goals</button>${manual ? `<button type="button" class="btn" data-pro="goalscoach">Use coach targets</button>` : ""}${off && p.useTargets ? `<button type="button" class="btn danger" data-pro="goalsclear">Remove goals</button>` : ""}</div></form></div></div>`;
+  $("#dlg").showModal();
+  updateGoalTotal();
+}
+const goalCalories = () => Math.round(num($("#gp")?.value) * 4 + num($("#gc")?.value) * 4 + num($("#gf")?.value) * 9);
+function updateGoalTotal() { const el = $("#gKcal"); if (el) el.textContent = fmt(goalCalories()); }
+function saveGoals(d) {
+  const p = S.profile, manual = { p: Math.round(num(d.get("p"))), c: Math.round(num(d.get("c"))), f: Math.round(num(d.get("f"))) };
+  manual.kcal = manual.p * 4 + manual.c * 4 + manual.f * 9;
+  if (manual.kcal < 800) { const err = $("#goalErr"); err.textContent = "These goals add up to under 800 calories. Raise at least one macro."; err.hidden = false; return; }
+  p.manual = manual;
+  if (coachingOff()) { p.useTargets = true; p.plan = trackingPlan(); }
+  else { if (p.mode !== "manual") p.lastCoachMode = p.mode || "coached"; p.mode = "manual"; p.plan = targets(); }
+  touch(); $("#dlg").close(); render();
+}
+
 /* Log dashboard */
 const svgIcon = body => `<svg viewBox="0 0 24 24" aria-hidden="true">${body}</svg>`;
 const ICONS = {
@@ -336,11 +409,12 @@ function logView() {
   return `<div class="today-head"><h1>${esc(long(cursor))}</h1><div class="weeknav"><button class="iconbtn" data-act="day" data-n="-7" aria-label="Previous week">${ICONS.back}</button><button class="iconbtn" data-act="day" data-n="7" aria-label="Next week" ${cursor >= today() ? "disabled" : ""}>${ICONS.next}</button></div></div>
   <div class="weekstrip">${week.map(dayChip).join("")}</div>
   <div class="dash"><div class="dash-side"><section class="card hero" aria-label="Daily totals">
+    <button class="btn small herogoals" data-pro="goals">${g.kcal ? "Edit goals" : "Set goals"}</button>
     <div class="ringbox"><svg viewBox="0 0 120 120" role="img" aria-label="${fmt(t.kcal)} calories eaten"><circle class="ringtrack" cx="60" cy="60" r="${r}"/>${pct ? `<circle class="ringfill ${left < 0 ? "over" : ""}" cx="60" cy="60" r="${r}" stroke-dasharray="${len.toFixed(1)}" stroke-dashoffset="${(len * (1 - pct)).toFixed(1)}"/>` : ""}</svg><div class="ringtext"><b>${fmt(g.kcal ? Math.abs(left) : t.kcal)}</b><span>${!g.kcal ? "calories eaten" : left >= 0 ? "calories left" : "calories over"}</span></div></div>
     ${g.kcal ? `<div class="calstats"><div><b>${fmt(t.kcal)}</b><span>Eaten</span></div><div><b>${fmt(g.kcal)}</b><span>${esc(dayLabel(cursor))}</span></div></div>` : ""}
     <div class="macros">${macroColumn("Protein", t.p, g.p, "--protein")}${macroColumn("Carbs", t.c, g.c, "--carbs")}${macroColumn("Fat", t.f, g.f, "--fat")}</div>
   </section>
-  <section class="card weighcard"><form class="weigh" data-form="weight"><div><b>Weight</b><span>${hasWeight ? `Trend ${toUser(latestTrend(cursor)).toFixed(1)} ${unit()}` : `Log in ${unit()}`}</span></div><input id="w" name="w" type="number" inputmode="decimal" step="0.1" min="20" max="1000" aria-label="Weight in ${unit()}" value="${x.w ? toUser(x.w).toFixed(1) : ""}" placeholder="0.0"><button class="btn small">Save</button></form></section></div>
+  <section class="card weighcard"><form class="weigh" data-form="weight"><div><b>Weight</b><span>${hasWeight ? `Trend ${toUser(latestTrend(cursor)).toFixed(1)} ${unit()}` : `Log in ${unit()}`}</span></div><input id="w" name="w" type="number" inputmode="decimal" step="0.1" min="20" max="1000" aria-label="Weight in ${unit()}" value="${x.w ? toUser(x.w).toFixed(1) : ""}" placeholder="0.0"><button class="btn small">Save</button></form></section>${microsCard(x)}</div>
   <div class="dash-log">${tools ? `<div class="daytools">${tools}</div>` : ""}
   ${MEALS.map(m => {
     const es = x.foods.filter(e => e.meal === m), sum = k => es.reduce((a, e) => a + e[k], 0);
@@ -488,6 +562,10 @@ document.addEventListener("click", ev => {
   if (a === "online") searchOnline();
   if (a === "irange") { insightRange = b.dataset.r === "all" ? "all" : +b.dataset.r; render(); }
   if (a === "goday" && b.dataset.d <= today()) { cursor = b.dataset.d; render(); }
+  if (a === "microtoggle") { microsExpanded = !microsExpanded; render(); }
+  if (a === "goals") openGoals();
+  if (a === "goalscoach") { const p = S.profile; p.mode = p.lastCoachMode || "coached"; p.plan = targets(); touch(); $("#dlg").close(); render(); }
+  if (a === "goalsclear") { S.profile.useTargets = false; S.profile.plan = trackingPlan(); touch(); $("#dlg").close(); render(); }
   if (a === "editentry") openEdit(b.dataset.id);
   if (a === "editdel" && editing) {
     if (!editing.confirmDelete) { editing.confirmDelete = true; b.textContent = "Confirm delete"; return; }
@@ -510,6 +588,8 @@ document.addEventListener("input", ev => {
   if (t.id === "servAmt") applyServingAmount();
   if (t.dataset.servMacro && servState) readServingBase();
   if ($("#editTotal")) updateEditTotal();
+  if ($("#formMicro")) refreshFormMicros();
+  if ($("#gKcal")) updateGoalTotal();
   if (!M?.recipe) return;
   if (t.id === "rname") M.recipe.name = t.value;
   if (t.id === "rserv" || t.dataset.ring != null) {
@@ -520,7 +600,7 @@ document.addEventListener("input", ev => {
 });
 document.addEventListener("change", ev => {
   const t = ev.target;
-  if (t.id === "servUnit") changeServingUnit(t);
+  if (t.id === "servUnit") { changeServingUnit(t); refreshFormMicros(); }
   if (t.id === "coachSwitch") syncCoachFields();
   if (t.id === "useTargets") $("#trackTargetRow").hidden = !t.checked;
   if (t.id === "pmode") { $("#nudgeRow").hidden = t.value !== "collab"; $("#manualRow").hidden = t.value !== "manual"; }
@@ -541,6 +621,7 @@ document.addEventListener("submit", ev => {
     p.plan = targets(); touch(); render();
   }
   if (t === "editentry" && editing) saveEdit(d);
+  if (t === "goals") saveGoals(d);
   if (t === "tracktargets") {
     const p = S.profile, use = !!d.get("use"), err = $("#trackErr");
     if (use) {
