@@ -14,6 +14,7 @@ Tare tracks calories and macros, scans packaged foods, estimates your actual ene
 - Starts with the Mifflin-St Jeor formula, then shifts toward your real data as you log
 - Offers updated calorie, protein, carb, and fat targets at a weekly check-in
 - Includes Coached, Collaborative, and Manual program modes
+- Lets you turn coaching off and use Tare only for macro tracking, with or without your own targets
 - Supports balanced, low-carb, keto, and carb-focused plans
 - Sets high, low, normal, and fasting days while keeping your weekly average
 - Supports goals from losing 1% to gaining 0.5% of body weight per week

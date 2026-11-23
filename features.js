@@ -23,6 +23,31 @@ const OCR = {
 const onlineCache = new Map();
 let onlineNext = 0, clip = null, insightRange = 30, contributor = "kcal", ocrLoad = null, photoUrls = [], confirmPhoto = "";
 
+/* Tracking-only mode */
+const coachingOff = () => S.profile?.mode === "off";
+function trackingPlan() {
+  const p = S.profile;
+  if (p.useTargets && p.manual) return { ...p.manual, setOn: today(), floored: false };
+  return { kcal: 0, p: 0, c: 0, f: 0, setOn: today(), floored: false };
+}
+function syncCoachFields() {
+  const sw = $("#coachSwitch"); if (!sw) return;
+  const off = sw.value === "off";
+  document.querySelectorAll(".coachOnly").forEach(el => { el.hidden = off; el.querySelectorAll("input,select").forEach(i => { i.disabled = off; }); });
+  const w = $("#kg"); if (w) { w.required = !off; w.placeholder = off ? "Optional" : ""; }
+}
+function targetsPanel(g, e, setupMode) {
+  const off = !setupMode && coachingOff();
+  if (off && !g.kcal) return `<section class="label"><h2>Tracking</h2><div class="cal"><div><b style="font:800 16px var(--display)">Coaching</b></div><b style="font-size:30px">Off</b></div><p class="muted" style="margin:9px 0 0;font-size:13px">Tare is recording calories and macros without daily targets. Add targets on this screen if you want them.</p></section>`;
+  return `<section class="label"><h2>Targets</h2><div class="cal"><div><b style="font:800 16px var(--display)">Calories</b></div><b>${fmt(g.kcal)}</b></div><div class="row"><b>Protein</b><span class="mono">${g.p} g</span></div><div class="row"><b>Carbs</b><span class="mono">${g.c} g</span></div><div class="row"><b>Fat</b><span class="mono">${g.f} g</span></div>${off ? "" : `<div class="row"><span>Expenditure</span><span class="mono">${fmt(e.tdee)} kcal</span></div>`}<p class="muted" style="margin:9px 0 0;font-size:13px">${off ? "Your own targets. Coaching is off, so Tare will not change them." : `Set ${esc(short(g.setOn))}. ${g.floored ? "Held at the minimum calorie floor. Consider a slower rate." : "Check-ins run every 7 days."}`}</p></section>`;
+}
+function trackingTargets() {
+  const p = S.profile, m = p.manual || { kcal: "", p: "", c: "", f: "" }, on = !!p.useTargets;
+  return `<form class="card form" data-form="tracktargets"><h2 class="full">Daily targets</h2><label class="full" style="display:flex;align-items:center;gap:8px"><input id="useTargets" name="use" type="checkbox" style="width:auto" ${on ? "checked" : ""}>Show my own calorie and macro targets</label>
+  <div class="full form" id="trackTargetRow" ${on ? "" : "hidden"}><label>Calories<input id="tk" name="kcal" type="number" min="1" max="8000" value="${esc(m.kcal)}"></label><label>Protein (g)<input id="tp" name="p" type="number" min="0" max="500" value="${esc(m.p)}"></label><label>Carbs (g)<input id="tc" name="c" type="number" min="0" max="1000" value="${esc(m.c)}"></label><label>Fat (g)<input id="tf" name="f" type="number" min="0" max="400" value="${esc(m.f)}"></label></div>
+  <p class="err full" id="trackErr" hidden></p><div class="full"><button class="btn primary">Save targets</button></div></form>`;
+}
+
 /* Programs and day targets */
 function applyDiet(t, kg) {
   const p = S.profile;
@@ -44,7 +69,7 @@ function applyDiet(t, kg) {
 }
 function dayPlan(date) {
   const p = S.profile, g = p.plan, week = p.week;
-  if (!week || week.every(x => x === "normal")) return { ...g, type: "normal" };
+  if (p.mode === "off" || !week || week.every(x => x === "normal")) return { ...g, type: "normal" };
   const mult = t => (DAY_TYPES[t] || DAY_TYPES.normal)[1], sum = week.reduce((a, t) => a + mult(t), 0);
   const type = week[parse(date).getDay()], kcal = Math.max(500, Math.round(g.kcal * mult(type) * 7 / sum / 10) * 10);
   const pr = type === "fast" ? Math.min(g.p, Math.round(kcal * .4 / 4)) : g.p;
@@ -55,7 +80,7 @@ function dayPlan(date) {
 const dayLabel = date => { const t = dayPlan(date).type; return t === "normal" ? "Target" : `${DAY_TYPES[t][0]} day target`; };
 function goalEta() {
   const p = S.profile;
-  if (!p.goalKg) return "";
+  if (p.mode === "off" || !p.goalKg) return "";
   const now = latestTrend(), gap = p.goalKg - now, e = estimate();
   if (Math.abs(gap) < .25) return "You are at your goal weight.";
   const perWeek = e.conf >= .3 ? e.rate * 7 : p.goal / 100 * now;
@@ -64,6 +89,7 @@ function goalEta() {
   return `${toUser(Math.abs(gap)).toFixed(1)} ${unit()} to go. Estimated arrival: ${parse(date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}.`;
 }
 function planExtras() {
+  if (coachingOff()) return trackingTargets();
   const p = S.profile, m = p.manual || p.plan, week = p.week || Array(7).fill("normal"), mode = p.mode || "coached", eta = goalEta();
   return `<form class="card form" data-form="coach"><h2 class="full">Macro program</h2>
   <label>Coaching mode<select id="pmode" name="mode">${opt("coached", "Coached", mode)}${opt("collab", "Collaborative", mode)}${opt("manual", "Manual", mode)}</select></label>
@@ -335,6 +361,8 @@ document.addEventListener("input", ev => {
 });
 document.addEventListener("change", ev => {
   const t = ev.target;
+  if (t.id === "coachSwitch") syncCoachFields();
+  if (t.id === "useTargets") $("#trackTargetRow").hidden = !t.checked;
   if (t.id === "pmode") { $("#nudgeRow").hidden = t.value !== "collab"; $("#manualRow").hidden = t.value !== "manual"; }
   if (t.id === "contrib") { contributor = t.value; render(); }
   if (t.dataset.proChange === "period") { const x = day(cursor); if (t.checked) x.period = true; else delete x.period; touch(cursor); render(); }
@@ -351,6 +379,15 @@ document.addEventListener("submit", ev => {
     p.mode = mode; p.diet = d.get("diet"); p.nudge = clamp(num(d.get("nudge")), -300, 300); p.week = week;
     if (goalW > 0) p.goalKg = +fromUser(goalW).toFixed(3); else delete p.goalKg;
     p.plan = targets(); touch(); render();
+  }
+  if (t === "tracktargets") {
+    const p = S.profile, use = !!d.get("use"), err = $("#trackErr");
+    if (use) {
+      const manual = { kcal: Math.round(num(d.get("kcal"))), p: Math.round(num(d.get("p"))), c: Math.round(num(d.get("c"))), f: Math.round(num(d.get("f"))) };
+      if (!(manual.kcal > 0)) { err.textContent = "Enter a calorie target, or turn daily targets off."; err.hidden = false; return; }
+      p.manual = manual;
+    }
+    p.useTargets = use; p.plan = trackingPlan(); touch(); render();
   }
   if (t === "track") {
     const x = day(cursor), m = {};
