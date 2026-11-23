@@ -149,7 +149,9 @@ dialog::before{content:"";position:absolute;inset:0 0 auto;height:var(--safe-top
 <dialog id="dlg" aria-label="Add food"></dialog>
 <input id="importFile" type="file" accept="application/json,.json" hidden>
 
+<script>window.TARE_BUILD="10";window.repairTareBuild=function(){try{const key="tare-build-repair",tries=Number(sessionStorage.getItem(key)||0);if(tries>=2)return false;sessionStorage.setItem(key,String(tries+1));const reload=()=>location.reload(),worker=navigator.serviceWorker;if(worker)worker.getRegistration().then(r=>r&&r.update()).catch(()=>{}).finally(()=>setTimeout(reload,700));else reload();return true}catch(e){return false}}</script>
 <script src="features.js"></script>
+<script>if(window.TARE_FEATURES_BUILD!==window.TARE_BUILD)window.repairTareBuild();else try{sessionStorage.removeItem("tare-build-repair")}catch(e){}</script>
 <script>
 const KCAL_PER_KG=7700,LB=2.20462,MEALS=["Breakfast","Lunch","Dinner","Snacks"];
 const FOOD_TEXT=`Chicken breast, cooked|100 g|165|31|0|3.6

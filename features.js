@@ -1,4 +1,17 @@
 /* Tare feature module: coaching programs, recipes, label scanning, tracking, and insights. */
+window.TARE_FEATURES_BUILD = "10";
+// A page from an older release cannot safely run this code, so reload it into the matching version.
+if (window.TARE_BUILD !== window.TARE_FEATURES_BUILD && !window.repairTareBuild) {
+  try {
+    const key = "tare-build-repair", tries = Number(sessionStorage.getItem(key) || 0);
+    if (tries < 2) {
+      sessionStorage.setItem(key, String(tries + 1));
+      const reload = () => location.reload(), worker = navigator.serviceWorker;
+      if (worker) worker.getRegistration().then(r => r && r.update()).catch(() => {}).finally(() => setTimeout(reload, 700));
+      else reload();
+    }
+  } catch (e) {}
+}
 const MICROS = [
   { k: "fiber", off: "fiber", label: "Fiber", u: "g", x: 1, dv: 28 },
   { k: "sugar", off: "sugars", label: "Sugar", u: "g", x: 1, dv: 50 },
@@ -318,6 +331,15 @@ function rankOnline(list, query) {
   const seen = new Set();
   return list.map(food => ({ food, s: score(food) })).sort((a, b) => b.s - a.s).map(x => x.food).filter(f => { const key = `${f.name}|${f.serv}`.toLowerCase(); if (seen.has(key)) return false; seen.add(key); return true; }).slice(0, 15);
 }
+async function onlineFailureMessage(error) {
+  if (error?.name === "AbortError") return "USDA took too long to respond. Try again.";
+  try {
+    await fetch("https://api.nal.usda.gov/", { mode: "no-cors", credentials: "omit", cache: "no-store", referrerPolicy: "no-referrer" });
+    return "USDA is reachable but did not accept this search. Its shared limit may be full, so try again later.";
+  } catch (e) {
+    return "Tare could not reach USDA. Check your connection. A VPN or content blocker can also block it.";
+  }
+}
 async function searchOnline() {
   const q = M.q.trim();
   if (q.length < 2) { M.onlineMsg = "Type at least 2 letters first."; refreshResults(); return; }
@@ -342,7 +364,8 @@ async function searchOnline() {
     M.onlineMsg = list.length ? ONLINE_NOTE : "No online results found.";
   } catch (e) {
     onlineNext = Date.now() + (e.limit ? 1800000 : 10000);
-    if (M) M.onlineMsg = e.limit ? "The free USDA search limit was reached. Try again later. Built-in foods and barcode scanning still work." : "Online search could not connect. Check your connection and try again. Built-in foods still work.";
+    const message = e.limit ? "The free USDA search limit was reached. Try again later. Built-in foods and barcode scanning still work." : await onlineFailureMessage(e);
+    if (M) M.onlineMsg = message;
   } finally { clearTimeout(timer); if (M) { M.onlineBusy = false; refreshResults(); } }
 }
 function refreshResults() { const r = $("#res"), m = $("#onlineMsg"), b = $("#onlineBtn"); if (r) r.innerHTML = resultsHTML(); if (m) { m.textContent = M.onlineMsg || ""; m.hidden = !M.onlineMsg; } if (b) b.disabled = !!M.onlineBusy; }
