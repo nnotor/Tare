@@ -120,7 +120,64 @@ function cleanDayExtras(v) {
   if (v.m && typeof v.m === "object") { const m = {}; for (const [k] of MEASURES) if (num(v.m[k]) > 0) m[k] = clamp(num(v.m[k]), 1, 400); if (Object.keys(m).length) o.m = m; }
   return o;
 }
-function smartFoods(meal) {
+/* Autocomplete search */
+function editDistance(a, b, max) {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i]; let best = i;
+    for (let j = 1; j <= b.length; j++) {
+      row[j] = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      best = Math.min(best, row[j]);
+    }
+    if (best > max) return max + 1;
+    prev = row;
+  }
+  return prev[b.length];
+}
+const searchTokens = text => String(text).toLowerCase().split(/[^a-z0-9%]+/).filter(Boolean);
+function scoreFood(name, words, whole) {
+  const lower = String(name).toLowerCase(), tokens = searchTokens(name);
+  let score = lower.startsWith(whole) ? 100 : 0;
+  for (const word of words) {
+    if (tokens[0]?.startsWith(word)) score += 45;
+    else if (tokens.some(t => t.startsWith(word))) score += 30;
+    else if (lower.includes(word)) score += 12;
+    else {
+      const max = word.length >= 7 ? 2 : word.length >= 4 ? 1 : 0;
+      if (!max || !tokens.some(t => editDistance(word, t, max) <= max || editDistance(word, t.slice(0, word.length), max) <= max)) return null;
+      score += 4;
+    }
+  }
+  return score - Math.min(lower.length, 40) / 10;
+}
+function rankFoods(query) {
+  const whole = query.trim().toLowerCase(), words = searchTokens(whole);
+  if (!words.length) return [];
+  const usual = smartFoods(M.meal, 60), boost = new Map(usual.map((f, i) => [f.name, 26 - Math.min(i, 20)])), seen = new Set(), ranked = [];
+  for (const food of [...S.custom, ...usual, ...FOODS]) {
+    if (seen.has(food.name)) continue;
+    seen.add(food.name);
+    const base = scoreFood(food.name, words, whole);
+    if (base != null) ranked.push({ food, score: base + (boost.get(food.name) || 0) + (S.custom.includes(food) ? 8 : 0) });
+  }
+  return ranked.sort((a, b) => b.score - a.score || a.food.name.localeCompare(b.food.name)).slice(0, 30).map(x => x.food);
+}
+function highlightName(name) {
+  const text = String(name), lower = text.toLowerCase(), marks = new Array(text.length).fill(false);
+  for (const word of searchTokens(M?.q || "")) {
+    const at = lower.search(new RegExp(`(^|[^a-z0-9%])${word.replace(/[%]/g, "\\$&")}`));
+    const start = at < 0 ? lower.indexOf(word) : at + (/[a-z0-9%]/.test(lower[at]) ? 0 : 1);
+    if (start >= 0) marks.fill(true, start, start + word.length);
+  }
+  let out = "", open = false;
+  for (let i = 0; i < text.length; i++) {
+    if (marks[i] !== open) { out += marks[i] ? "<mark>" : "</mark>"; open = marks[i]; }
+    out += esc(text[i]);
+  }
+  return out + (open ? "</mark>" : "");
+}
+function smartFoods(meal, limit = 10) {
   const score = new Map(), now = today();
   for (const d of Object.keys(S.days)) {
     const age = between(d, now);
@@ -132,7 +189,7 @@ function smartFoods(meal) {
       score.set(e.name, hit);
     }
   }
-  return [...score.values()].sort((a, b) => b.s - a.s).slice(0, 10).map(x => x.f);
+  return [...score.values()].sort((a, b) => b.s - a.s).slice(0, limit).map(x => x.f);
 }
 async function searchOnline() {
   const q = M.q.trim();
@@ -597,6 +654,12 @@ document.addEventListener("input", ev => {
     const el = $("#rTotal"), x = recipeTotals(M.recipe), s = Math.max(.1, num(M.recipe.servings, 1)); if (el) el.textContent = `Per serving: ${fmt(x.kcal / s)} kcal · ${Math.round(x.p / s)}P ${Math.round(x.c / s)}C ${Math.round(x.f / s)}F`;
   }
   if (t.id === "rq") { M.recipe.q = t.value; const pos = t.selectionStart; renderDlg(); const n = $("#rq"); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) {} } }
+});
+document.addEventListener("keydown", ev => {
+  if (ev.target.id !== "q" || ev.key !== "Enter" || ev.isComposing) return;
+  ev.preventDefault();
+  const first = $("#res [data-act=pick]");
+  if (first && M?.q.trim()) first.click(); else ev.target.blur();
 });
 document.addEventListener("change", ev => {
   const t = ev.target;
