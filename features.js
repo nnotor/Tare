@@ -78,7 +78,7 @@ function restoreBackup(x) {
   render();
 }
 function clearSessionData() {
-  clip = null; editing = null; servState = null; onlineCache.clear(); onlineNext = 0; confirmPhoto = "";
+  clip = null; editing = null; servState = null; onlineCache.clear(); productCache.clear(); onlineNext = 0; confirmPhoto = "";
   photoUrls.forEach(u => URL.revokeObjectURL(u)); photoUrls = [];
   if (!$("#dlg")?.open) M = null;
 }
