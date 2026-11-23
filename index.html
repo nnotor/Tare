@@ -6,8 +6,7 @@
 <title>Tare Nutrition Coach</title>
 <meta name="description" content="A private nutrition coach that keeps your log on your phone.">
 <meta name="referrer" content="no-referrer">
-<meta name="theme-color" content="#eef2f4" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0e171c" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#111315">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Tare">
@@ -17,16 +16,13 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <style>
 :root{--safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);--safe-left:env(safe-area-inset-left,0px);--safe-right:env(safe-area-inset-right,0px);--status:var(--bg);padding-top:var(--safe-top);padding-bottom:var(--safe-bottom);color-scheme:light;-webkit-text-size-adjust:100%}
-@media (display-mode:standalone){:root{--status:#10212b}}
 body{margin:0}img{max-width:100%}[hidden]{display:none!important}
 body::before{content:"";position:fixed;inset:0 0 auto;height:var(--safe-top);background:var(--status);z-index:10}
 body:has(dialog[open]){overflow:hidden}
 button,label,select,input{touch-action:manipulation}
-/* Layout concept: a food-label panel anchors each day, with the log and the coach's numbers beside it. */
+/* Base layout. The visual system lives in theme.css. */
 :root{--bg:#eef2f4;--panel:#fff;--ink:#10212b;--muted:#566a75;--line:#cdd8dd;--accent:#0b5fd6;--on-accent:#fff;--protein:#0b8378;--carbs:#b86e00;--fat:#8a3f9e;--warn-bg:#fff2d6;--warn:#7a4b00;--bad:#b3261e;
 --display:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e171c;--panel:#172329;--ink:#e8f0f3;--muted:#9db0ba;--line:#2e3f48;--accent:#7cb2ff;--on-accent:#06203f;--protein:#4dd0c1;--carbs:#f0ae48;--fat:#d796e6;--warn-bg:#3a2c10;--warn:#ffd98a;--bad:#ff9c94;color-scheme:dark}}
-:root[data-theme="dark"]{--bg:#0e171c;--panel:#172329;--ink:#e8f0f3;--muted:#9db0ba;--line:#2e3f48;--accent:#7cb2ff;--on-accent:#06203f;--protein:#4dd0c1;--carbs:#f0ae48;--fat:#d796e6;--warn-bg:#3a2c10;--warn:#ffd98a;--bad:#ff9c94;color-scheme:dark}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 88px}
 .wrap{max-width:1040px;margin:0 auto;display:grid;gap:16px}
@@ -134,11 +130,16 @@ dialog::before{content:"";position:absolute;inset:0 0 auto;height:var(--safe-top
 }
 @media (prefers-reduced-motion:no-preference){.bar i{transition:width .25s}}
 </style>
+<link rel="stylesheet" href="theme.css">
 </head>
 <body>
 <div class="wrap">
   <header><div class="brand">Tare</div><nav aria-label="Main">
-    <button data-act="view" data-v="log">Log</button><button data-act="view" data-v="trends">Trends</button><button data-act="view" data-v="track">Track</button><button data-act="view" data-v="insights">Insights</button><button data-act="view" data-v="plan">Plan</button>
+    <button data-act="view" data-v="log"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v8M4 3v5a3 3 0 0 0 6 0V3M7 11v10M17 3c-2 1-3 4-3 7 0 2 1 3 3 3v8"/></svg>Log</button>
+    <button data-act="view" data-v="trends"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17 9 11l4 4 8-9M15 6h6v6"/></svg>Trends</button>
+    <button data-act="view" data-v="track"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="8" width="18" height="9" rx="2"/><path d="M7 8v3M11 8v4M15 8v3M19 8v2"/></svg>Track</button>
+    <button data-act="view" data-v="insights"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-6M12 20V5M19 20v-10"/></svg>Insights</button>
+    <button data-act="view" data-v="plan"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>Plan</button>
   </nav><div class="save" id="save" role="status">Loading</div></header>
   <div id="banner"></div>
   <main id="main" class="stack"><div class="card muted">Loading your log.</div></main>
@@ -324,21 +325,11 @@ async function showOffline(note=""){const main=$("#offlineStatus"),detail=$("#of
     const state=reg?.active?.state||reg?.waiting?.state||reg?.installing?.state||"none",ready=controls&&page&&saved>=5;if(!$("#offlineStatus"))return;main.textContent=note||(ready?"Ready. Tare should open in airplane mode.":"Not ready. Tap Prepare for offline while connected, then fully close and reopen Tare.");detail.textContent=`home screen: ${installed?"yes":"no"} · worker: ${state} · controls app: ${controls?"yes":"no"} · saved files: ${saved}/6 · cache: ${name}${swError?` · error: ${swError}`:""}`}
   catch(e){main.textContent=note||"Tare could not read its offline storage.";detail.textContent=`home screen: ${installed?"yes":"no"} · error: ${e?.name||"Error"}: ${e?.message||""}`}}
 async function prepareOffline(){const main=$("#offlineStatus");if(main)main.textContent="Saving Tare to this phone.";try{swError="";const reg=await navigator.serviceWorker.register("sw.js",{updateViaCache:"none"});await reg.update();await Promise.race([navigator.serviceWorker.ready,new Promise((_,j)=>setTimeout(()=>j(new Error("worker timed out")),12000))]);await new Promise(r=>setTimeout(r,1200));await showOffline(navigator.serviceWorker.controller?"":"Saved. Fully close and reopen Tare once to finish.")}catch(e){swError=`${e?.name||"Error"}: ${e?.message||""}`;await showOffline("Tare could not be saved for offline use.")}}
-function meter(name,val,goal,color){const pct=goal?clamp(val/goal*100,0,100):0;return`<div class="macro"><div><b>${name}</b><span class="mono">${goal?`${Math.round(val)} / ${goal} g`:`${Math.round(val)} g`}</span></div>${goal?`<div class="bar"><i style="width:${pct}%;background:var(${color})"></i></div>`:""}</div>`}
-function logView(){const t=totals(cursor),g=dayPlan(cursor),left=g.kcal-t.kcal,x=peek(cursor),canCopy=!x.foods.length&&peek(add(cursor,-1)).foods.length;
-  return`<div class="grid"><section class="label" aria-label="Daily totals"><h2>Daily Facts</h2>${g.kcal?`<div class="row"><b>${esc(dayLabel(cursor))}</b><span class="mono">${fmt(g.kcal)} kcal</span></div>`:""}
-  <div class="cal"><div><b style="font:800 16px var(--display)">${!g.kcal?"Calories eaten":left>=0?"Calories left":"Calories over"}</b></div><b>${fmt(g.kcal?Math.abs(left):t.kcal)}</b></div>${g.kcal?`<div class="row"><span>Eaten</span><span class="mono">${fmt(t.kcal)} kcal</span></div>`:""}
-  ${meter("Protein",t.p,g.p,"--protein")}${meter("Carbs",t.c,g.c,"--carbs")}${meter("Fat",t.f,g.f,"--fat")}
-  <form class="weigh" data-form="weight"><label for="w">Morning weight (${unit()})<input id="w" name="w" type="number" inputmode="decimal" step="0.1" min="20" max="1000" value="${x.w?toUser(x.w).toFixed(1):""}" placeholder="Enter weight"></label><button class="btn">Save</button></form></section>
-  <section class="card"><div class="datebar"><button class="icon" data-act="day" data-n="-1" aria-label="Previous day">‹</button><h2>${esc(long(cursor))}</h2><button class="icon" data-act="day" data-n="1" aria-label="Next day" ${cursor>=today()?"disabled":""}>›</button></div>
-  ${dayTools(canCopy)}
-  ${MEALS.map(m=>{const es=x.foods.filter(e=>e.meal===m),k=es.reduce((a,e)=>a+e.kcal,0);return`<div class="meal"><div class="mealhead"><h3>${m} <span class="muted mono" style="font-weight:400;font-size:13px">${k?fmt(k)+" kcal":""}</span></h3><span style="display:flex;gap:6px"><button class="btn small" data-act="add" data-meal="${m}" data-tab="scan" aria-label="Scan food for ${m}">Scan</button><button class="btn small" data-act="add" data-meal="${m}" aria-label="Add food to ${m}">Add food</button></span></div>${es.map(e=>`<div class="entry"><button class="entrymain" data-pro="editentry" data-id="${esc(e.id)}" aria-label="Edit ${esc(e.name)}"><b>${esc(e.name)}</b><small>${e.qty!==1?esc(e.qty)+" × ":""}${esc(e.serv)} · ${Math.round(e.p)}P ${Math.round(e.c)}C ${Math.round(e.f)}F · <span class="editcue">Edit</span></small></button><span class="mono">${fmt(e.kcal)}</span><button class="link" style="min-height:44px" data-pro="copyentry" data-id="${esc(e.id)}" aria-label="Copy ${esc(e.name)}">Copy</button><button class="icon" data-act="remove" data-id="${esc(e.id)}" aria-label="Remove ${esc(e.name)}">×</button></div>`).join("")}${mealTools(m,es)}</div>`}).join("")}
-  <label style="display:flex;gap:8px;align-items:center;border-top:1px solid var(--line);padding-top:10px;font-size:13px" class="muted"><input id="skip" type="checkbox" style="width:auto" data-change="skip" ${x.skip?"checked":""}>This day is incomplete, so leave it out of my expenditure estimate</label></section></div>`}
 function trendsView(){const e=estimate(),trend=latestTrend(),conf=e.conf>=.7?"High":e.conf>=.3?"Building":"Starting estimate",w=e.rate*7;
   return`<section class="card stats">${coachingOff()?`<div class="stat"><span>Days logged</span><b>${Object.keys(S.days).filter(d=>peek(d).foods.length).length}</b><span>all time</span></div>`:`<div class="stat"><span>Expenditure</span><b>${fmt(e.tdee)}</b><span>${conf}</span></div>`}<div class="stat"><span>Trend weight</span><b>${toUser(trend).toFixed(1)}</b><span>${unit()}</span></div><div class="stat"><span>Weekly change</span><b>${e.conf?(w>0?"+":"")+toUser(w).toFixed(2):"–"}</b><span>${unit()} per week</span></div><div class="stat"><span>Average intake</span><b>${e.n?fmt(e.avg):"–"}</b><span>${e.n} logged days</span></div></section>
   <div class="seg" style="justify-self:start" role="group" aria-label="Chart range">${[[14,"2 weeks"],[42,"6 weeks"],[90,"3 months"],[365,"1 year"]].map(r=>`<button data-act="range" data-r="${r[0]}" aria-pressed="${range===r[0]}">${r[1]}</button>`).join("")}</div>
   <section class="card"><div class="charthead"><h2>Weight</h2><div class="legend"><span><i style="background:var(--muted);height:6px;width:6px;border-radius:50%"></i>Scale</span><span><i style="background:var(--accent)"></i>Trend</span></div></div><div class="readout" id="r1">Hover or tap the chart for daily values</div><div class="chart" id="c1"></div></section>
-  <section class="card"><div class="charthead"><h2>${coachingOff()?"Calories":"Calories in and expenditure"}</h2><div class="legend"><span><i style="background:var(--line);height:9px"></i>Intake</span>${coachingOff()?"":`<span><i style="background:var(--protein)"></i>Expenditure</span>`}</div></div><div class="readout" id="r2">Hover or tap the chart for daily values</div><div class="chart" id="c2"></div></section>`}
+  <section class="card"><div class="charthead"><h2>${coachingOff()?"Calories":"Calories in and expenditure"}</h2><div class="legend"><span><i style="background:var(--bar);height:9px"></i>Intake</span>${coachingOff()?"":`<span><i style="background:var(--protein)"></i>Expenditure</span>`}</div></div><div class="readout" id="r2">Hover or tap the chart for daily values</div><div class="chart" id="c2"></div></section>`}
 function opt(v,l,cur){return`<option value="${v}" ${String(v)===String(cur)?"selected":""}>${l}</option>`}
 function planView(){const p=setup?{unit:"lb",sex:"m",age:"",heightCm:"",activity:1.55,goal:-.5,protein:1.8}:{activity:1.55,goal:-.5,protein:1.8,sex:"m",...S.profile},u=p.unit==="kg"?"kg":"lb",h=p.heightCm?(u==="kg"?Math.round(p.heightCm):(p.heightCm/2.54).toFixed(1)):"",off=!setup&&coachingOff(),kg=setup||(off&&!weights().length)?"":toUser(latestTrend()).toFixed(1),e=estimate(),g=S.profile.plan;
   return`<div class="grid">${targetsPanel(g,e,setup)}
@@ -362,7 +353,7 @@ function drawCharts(){const dates=chartDates(),W=Math.max(280,$("#c1").clientWid
   if(!all.length)$("#c1").innerHTML=`<p class="muted">Add a weigh-in to start this chart.</p>`;else{let a=Math.min(...all),b=Math.max(...all),pad=Math.max(.5,(b-a)*.12);a-=pad;b+=pad;const y=scale(a,b,H-28,10),path=tr.map((v,i)=>v==null?"":`${tr[i-1]==null?"M":"L"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join("");let dots="";ws.forEach((v,i)=>{if(v!=null)dots+=`<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="2.4" fill="var(--muted)" opacity=".65"/>`});const li=tr.map((v,i)=>v!=null?i:-1).filter(i=>i>=0).pop();
     $("#c1").innerHTML=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Scale weight and trend weight over time">${frame(W,H,dates,ticks(a,b),x,y,v=>v.toFixed(Math.abs(b-a)<5?1:0))}<line class="guide" y1="8" y2="${H-26}" stroke="var(--muted)" opacity="0"/>${dots}<path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2.5"/><circle cx="${x(li)}" cy="${y(tr[li])}" r="4.5" fill="var(--accent)"/></svg>`;
     wire("#c1","#r1",dates,x,i=>`${short(dates[i])}: scale ${ws[i]==null?"not logged":ws[i].toFixed(1)}, trend ${tr[i]==null?"none":tr[i].toFixed(1)} ${unit()}`)}
-  const intake=dates.map(d=>totals(d).kcal),exp=coachingOff()?[]:dates.map(d=>estimate(d).tdee),mx=Math.max(1,...intake,...exp)*1.1,y2=scale(0,mx,H-28,10),bw=Math.max(1.5,(x(1)-x(0))*.62||8),bars=intake.map((v,i)=>v?`<rect x="${(x(i)-bw/2).toFixed(1)}" y="${y2(v).toFixed(1)}" width="${bw.toFixed(1)}" height="${(H-28-y2(v)).toFixed(1)}" fill="var(--line)"/>`:"").join(""),p2=exp.map((v,i)=>`${i?"L":"M"}${x(i).toFixed(1)} ${y2(v).toFixed(1)}`).join("");
+  const intake=dates.map(d=>totals(d).kcal),exp=coachingOff()?[]:dates.map(d=>estimate(d).tdee),mx=Math.max(1,...intake,...exp)*1.1,y2=scale(0,mx,H-28,10),bw=Math.max(1.5,(x(1)-x(0))*.62||8),bars=intake.map((v,i)=>v?`<rect x="${(x(i)-bw/2).toFixed(1)}" y="${y2(v).toFixed(1)}" width="${bw.toFixed(1)}" height="${(H-28-y2(v)).toFixed(1)}" rx="2" fill="var(--bar)"/>`:"").join(""),p2=exp.map((v,i)=>`${i?"L":"M"}${x(i).toFixed(1)} ${y2(v).toFixed(1)}`).join("");
   $("#c2").innerHTML=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${exp.length?"Daily calories and estimated expenditure":"Daily calories"}">${frame(W,H,dates,ticks(0,mx),x,y2,v=>fmt(v))}${bars}<line class="guide" y1="8" y2="${H-26}" stroke="var(--muted)" opacity="0"/>${exp.length?`<path d="${p2}" fill="none" stroke="var(--protein)" stroke-width="2.5"/>`:""}</svg>`;
   wire("#c2","#r2",dates,x,i=>`${short(dates[i])}: ate ${intake[i]?fmt(intake[i])+" kcal":"not logged"}${exp.length?`, expenditure ${fmt(exp[i])} kcal`:""}`)}
 

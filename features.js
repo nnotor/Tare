@@ -310,6 +310,46 @@ function saveRecipe(addIt) {
   $("#dlg").close(); render();
 }
 
+/* Log dashboard */
+const svgIcon = body => `<svg viewBox="0 0 24 24" aria-hidden="true">${body}</svg>`;
+const ICONS = {
+  back: svgIcon('<path d="m15 18-6-6 6-6"/>'),
+  next: svgIcon('<path d="m9 18 6-6-6-6"/>'),
+  plus: svgIcon('<path d="M12 5v14M5 12h14"/>'),
+  scan: svgIcon('<path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M8 8v8M12 8v8M16 8v8"/>'),
+  copy: svgIcon('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4V6a2 2 0 0 1 2-2h9v1"/>'),
+  close: svgIcon('<path d="M18 6 6 18M6 6l12 12"/>')
+};
+function dayChip(d) {
+  const g = dayPlan(d), kcal = totals(d).kcal, r = 13, len = 2 * Math.PI * r, pct = g.kcal ? Math.min(1, kcal / g.kcal) : kcal > 0 ? 1 : 0, over = g.kcal && kcal > g.kcal * 1.05, date = parse(d), future = d > today();
+  return `<button class="daychip" data-pro="goday" data-d="${d}" ${d === cursor ? 'aria-current="date"' : ""} ${future ? "disabled" : ""} aria-label="${esc(date.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }))}"><span>${DAY_NAMES[date.getDay()].slice(0, 1)}</span><span class="daywrap"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="${r}" fill="none" stroke="var(--raised)" stroke-width="3"/>${pct ? `<circle cx="16" cy="16" r="${r}" fill="none" stroke="var(${over ? "--bad" : "--ink"})" stroke-width="3" stroke-linecap="round" stroke-dasharray="${(pct * len).toFixed(1)} ${len.toFixed(1)}"/>` : ""}</svg><b>${date.getDate()}</b></span></button>`;
+}
+function macroColumn(name, value, goal, color) {
+  const pct = goal ? clamp(value / goal * 100, 0, 100) : 0;
+  return `<div class="macrocol"><span>${name}</span><b>${Math.round(value)}<small>${goal ? ` / ${goal} g` : " g"}</small></b>${goal ? `<div class="bar"><i style="width:${pct}%;background:var(${color})"></i></div>` : ""}</div>`;
+}
+function logView() {
+  const t = totals(cursor), g = dayPlan(cursor), left = g.kcal - t.kcal, x = peek(cursor), canCopy = !x.foods.length && peek(add(cursor, -1)).foods.length;
+  const weekStart = add(cursor, -parse(cursor).getDay()), week = Array.from({ length: 7 }, (_, i) => add(weekStart, i));
+  const r = 52, len = 2 * Math.PI * r, pct = g.kcal ? Math.min(1, t.kcal / g.kcal) : 0, hasWeight = weights().length > 0;
+  const tools = dayTools(canCopy);
+  return `<div class="today-head"><h1>${esc(long(cursor))}</h1><div class="weeknav"><button class="iconbtn" data-act="day" data-n="-7" aria-label="Previous week">${ICONS.back}</button><button class="iconbtn" data-act="day" data-n="7" aria-label="Next week" ${cursor >= today() ? "disabled" : ""}>${ICONS.next}</button></div></div>
+  <div class="weekstrip">${week.map(dayChip).join("")}</div>
+  <div class="dash"><div class="dash-side"><section class="card hero" aria-label="Daily totals">
+    <div class="ringbox"><svg viewBox="0 0 120 120" role="img" aria-label="${fmt(t.kcal)} calories eaten"><circle class="ringtrack" cx="60" cy="60" r="${r}"/>${pct ? `<circle class="ringfill ${left < 0 ? "over" : ""}" cx="60" cy="60" r="${r}" stroke-dasharray="${len.toFixed(1)}" stroke-dashoffset="${(len * (1 - pct)).toFixed(1)}"/>` : ""}</svg><div class="ringtext"><b>${fmt(g.kcal ? Math.abs(left) : t.kcal)}</b><span>${!g.kcal ? "calories eaten" : left >= 0 ? "calories left" : "calories over"}</span></div></div>
+    ${g.kcal ? `<div class="calstats"><div><b>${fmt(t.kcal)}</b><span>Eaten</span></div><div><b>${fmt(g.kcal)}</b><span>${esc(dayLabel(cursor))}</span></div></div>` : ""}
+    <div class="macros">${macroColumn("Protein", t.p, g.p, "--protein")}${macroColumn("Carbs", t.c, g.c, "--carbs")}${macroColumn("Fat", t.f, g.f, "--fat")}</div>
+  </section>
+  <section class="card weighcard"><form class="weigh" data-form="weight"><div><b>Weight</b><span>${hasWeight ? `Trend ${toUser(latestTrend(cursor)).toFixed(1)} ${unit()}` : `Log in ${unit()}`}</span></div><input id="w" name="w" type="number" inputmode="decimal" step="0.1" min="20" max="1000" aria-label="Weight in ${unit()}" value="${x.w ? toUser(x.w).toFixed(1) : ""}" placeholder="0.0"><button class="btn small">Save</button></form></section></div>
+  <div class="dash-log">${tools ? `<div class="daytools">${tools}</div>` : ""}
+  ${MEALS.map(m => {
+    const es = x.foods.filter(e => e.meal === m), sum = k => es.reduce((a, e) => a + e[k], 0);
+    return `<section class="card mealcard"><div class="mealtitle"><div><h3>${m}</h3><p>${es.length ? `${fmt(sum("kcal"))} kcal · ${Math.round(sum("p"))}P ${Math.round(sum("c"))}C ${Math.round(sum("f"))}F` : "Nothing logged"}</p></div><div class="mealactions"><button class="iconbtn soft" data-act="add" data-meal="${m}" data-tab="scan" aria-label="Scan food for ${m}">${ICONS.scan}</button><button class="iconbtn add" data-act="add" data-meal="${m}" aria-label="Add food to ${m}">${ICONS.plus}</button></div></div>
+    ${es.map(e => `<div class="entry"><button class="entrymain" data-pro="editentry" data-id="${esc(e.id)}" aria-label="Edit ${esc(e.name)}"><b>${esc(e.name)}</b><small>${e.qty !== 1 ? esc(e.qty) + " × " : ""}${esc(e.serv)} · ${Math.round(e.p)}P ${Math.round(e.c)}C ${Math.round(e.f)}F</small></button><span class="entrykcal">${fmt(e.kcal)}</span><button class="iconbtn quiet" data-pro="copyentry" data-id="${esc(e.id)}" aria-label="Copy ${esc(e.name)}">${ICONS.copy}</button><button class="iconbtn quiet" data-act="remove" data-id="${esc(e.id)}" aria-label="Remove ${esc(e.name)}">${ICONS.close}</button></div>`).join("")}${mealTools(m, es)}</section>`;
+  }).join("")}
+  ${coachingOff() ? "" : `<label class="card skipcard"><input id="skip" type="checkbox" data-change="skip" ${x.skip ? "checked" : ""}>Leave this incomplete day out of my expenditure estimate</label>`}</div></div>`;
+}
+
 /* Edit logged foods */
 let editing = null;
 function openEdit(id) {
@@ -365,7 +405,7 @@ function dayTools(canCopy) {
   if (canCopy) b.push(`<button class="btn small" data-act="copyday">Copy previous day</button>`);
   if (has) b.push(`<button class="btn small" data-pro="copyday">Copy day</button>`);
   if (clip?.type === "day") b.push(`<button class="btn small primary" data-pro="pasteday">Paste day (${clip.items.length})</button>`);
-  return b.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;padding-top:10px">${b.join("")}</div>` : "";
+  return b.join("");
 }
 function mealTools(m, es) {
   const b = [];
@@ -447,6 +487,7 @@ document.addEventListener("click", ev => {
   const a = b.dataset.pro;
   if (a === "online") searchOnline();
   if (a === "irange") { insightRange = b.dataset.r === "all" ? "all" : +b.dataset.r; render(); }
+  if (a === "goday" && b.dataset.d <= today()) { cursor = b.dataset.d; render(); }
   if (a === "editentry") openEdit(b.dataset.id);
   if (a === "editdel" && editing) {
     if (!editing.confirmDelete) { editing.confirmDelete = true; b.textContent = "Confirm delete"; return; }
