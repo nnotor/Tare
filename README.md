@@ -43,7 +43,7 @@ Tare tracks calories and macros, scans packaged foods, estimates your actual ene
 
 ### Body tracking
 
-- Log steps and body measurements
+- Log body measurements
 - Track period days and estimate cycle length
 - Keep progress photos on your device
 
@@ -81,7 +81,7 @@ Some requests still leave your device:
 | jsDelivr | Downloading the barcode or label reader | Standard connection details |
 | Open Food Facts | Looking up a new barcode or using **Search online** | The barcode number or search text, plus standard connection details |
 
-Camera images, label photos, and progress photos are processed on your device and are not uploaded by Tare. If your browser offers the optional **Speak** button, its speech service may process your voice.
+Camera images, label photos, and progress photos are processed on your device and are not uploaded by Tare.
 
 ## Back up your data
 

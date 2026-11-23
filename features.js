@@ -90,7 +90,6 @@ function scaleN(n, q) { const o = {}; for (const k in n) o[k] = +(num(n[k]) * q)
 function cleanN(n) { if (!n || typeof n !== "object") return undefined; const o = {}; for (const m of MICROS) if (Number.isFinite(Number(n[m.k])) && n[m.k] != null) o[m.k] = clamp(Number(n[m.k]), 0, 1000000); return Object.keys(o).length ? o : undefined; }
 function cleanDayExtras(v) {
   const o = {};
-  if (num(v.steps) > 0) o.steps = Math.round(clamp(num(v.steps), 0, 200000));
   if (v.period) o.period = true;
   if (v.m && typeof v.m === "object") { const m = {}; for (const [k] of MEASURES) if (num(v.m[k]) > 0) m[k] = clamp(num(v.m[k]), 1, 400); if (Object.keys(m).length) o.m = m; }
   return o;
@@ -136,19 +135,7 @@ async function searchOnline() {
 }
 function refreshResults() { const r = $("#res"), m = $("#onlineMsg"), b = $("#onlineBtn"); if (r) r.innerHTML = resultsHTML(); if (m) { m.textContent = M.onlineMsg || ""; m.hidden = !M.onlineMsg; } if (b) b.disabled = !!M.onlineBusy; }
 function searchTools() {
-  const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
-  return `<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn small" id="onlineBtn" data-pro="online" ${M.onlineBusy ? "disabled" : ""}>Search online</button>${Speech ? `<button type="button" class="btn small" data-pro="speak">Speak</button>` : ""}</div><p class="muted" id="onlineMsg" role="status" style="margin:0;font-size:13px" ${M.onlineMsg ? "" : "hidden"}>${esc(M.onlineMsg || "")}</p>`;
-}
-function startSpeech() {
-  const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!Speech) return;
-  const rec = new Speech();
-  rec.lang = navigator.language || "en-US"; rec.interimResults = false; rec.maxAlternatives = 1;
-  M.onlineMsg = "Listening. Say a food name."; refreshResults();
-  rec.onresult = ev => { const q = $("#q"); if (!q) return; q.value = ev.results[0][0].transcript.replace(/[.?!]$/, ""); q.dispatchEvent(new Event("input", { bubbles: true })); M.onlineMsg = ""; refreshResults(); };
-  rec.onerror = () => { M.onlineMsg = "Speech is not available here. Use the microphone on your keyboard instead."; refreshResults(); };
-  rec.onend = () => { if (M?.onlineMsg === "Listening. Say a food name.") { M.onlineMsg = ""; refreshResults(); } };
-  try { rec.start(); } catch (e) { M.onlineMsg = "Speech could not start. Use the microphone on your keyboard instead."; refreshResults(); }
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn small" id="onlineBtn" data-pro="online" ${M.onlineBusy ? "disabled" : ""}>Search online</button></div><p class="muted" id="onlineMsg" role="status" style="margin:0;font-size:13px" ${M.onlineMsg ? "" : "hidden"}>${esc(M.onlineMsg || "")}</p>`;
 }
 
 /* Nutrition label scanner */
@@ -265,7 +252,7 @@ function cycleInfo() {
 function trackView() {
   const x = peek(cursor), m = x.m || {};
   return `<section class="card"><div class="datebar"><button class="icon" data-act="day" data-n="-1" aria-label="Previous day">‹</button><h2>${esc(long(cursor))}</h2><button class="icon" data-act="day" data-n="1" aria-label="Next day" ${cursor >= today() ? "disabled" : ""}>›</button></div></section>
-  <div class="grid2"><form class="card form" data-form="track"><h2 class="full">Steps and body</h2><label class="full">Steps<input id="tsteps" name="steps" type="number" inputmode="numeric" min="0" max="200000" value="${x.steps || ""}" placeholder="Enter steps"></label>
+  <div class="grid2"><form class="card form" data-form="track"><h2 class="full">Body measurements</h2>
   ${MEASURES.map(([k, l]) => { const prev = latestMeasure(k, cursor), delta = m[k] && prev ? lenUser(m[k] - prev.v) : null; return `<label>${l} (${lenUnit()})${delta != null ? ` <span class="muted" style="font-weight:400">${delta > 0 ? "+" : ""}${delta.toFixed(1)}</span>` : ""}<input id="tm-${k}" name="m-${k}" type="number" inputmode="decimal" step="0.1" min="1" max="400" value="${m[k] ? lenUser(m[k]).toFixed(1) : ""}"></label>`; }).join("")}
   <div class="full"><button class="btn primary">Save</button></div></form>
   <section class="card stack"><h2>Period</h2><label style="display:flex;align-items:center;gap:8px"><input id="tperiod" data-pro-change="period" type="checkbox" style="width:auto" ${x.period ? "checked" : ""}>Period on this day</label><p class="muted" style="margin:0">${esc(cycleInfo())}</p></section></div>
@@ -305,11 +292,11 @@ function contributors(days, key) {
 }
 function insightsView() {
   const days = rangeDays(insightRange), ave = [["7 days", averages(rangeDays(7))], ["30 days", averages(rangeDays(30))], ["All time", averages(rangeDays("all"))]], foods = days.flatMap(d => S.days[d].foods), mealK = MEALS.map(m => foods.filter(e => e.meal === m).reduce((a, e) => a + e.kcal, 0)), allK = mealK.reduce((a, b) => a + b, 0) || 1;
-  const last35 = Array.from({ length: 35 }, (_, i) => add(today(), i - 34)), logs28 = Array.from({ length: 28 }, (_, i) => add(today(), -i)), logPct = Math.round(logs28.filter(logged).length / 28 * 100), weighPct = Math.round(logs28.filter(weighed).length / 28 * 100), stepDays = logs28.map(d => peek(d).steps).filter(Boolean), stepAvg = stepDays.length ? stepDays.reduce((a, b) => a + b, 0) / stepDays.length : 0;
+  const last35 = Array.from({ length: 35 }, (_, i) => add(today(), i - 34)), logs28 = Array.from({ length: 28 }, (_, i) => add(today(), -i)), logPct = Math.round(logs28.filter(logged).length / 28 * 100), weighPct = Math.round(logs28.filter(weighed).length / 28 * 100);
   const keys = [["kcal", "Calories", "kcal"], ["p", "Protein", "g"], ["c", "Carbs", "g"], ["f", "Fat", "g"], ...MICROS.map(m => [m.k, m.label, m.u])], cur = keys.find(k => k[0] === contributor) || keys[0], top = contributors(days, cur[0]), eta = goalEta();
   const micro = MICROS.map(m => { const vals = foods.filter(e => e.n?.[m.k] != null), sum = vals.reduce((a, e) => a + e.n[m.k], 0); return { ...m, avg: days.length ? sum / days.length : 0, count: vals.length }; });
   return `<div class="seg" style="justify-self:start" role="group" aria-label="Insight range">${[[7, "7 days"], [30, "30 days"], [90, "90 days"], ["all", "All"]].map(r => `<button data-pro="irange" data-r="${r[0]}" aria-pressed="${insightRange === r[0]}">${r[1]}</button>`).join("")}</div>
-  <section class="card stats"><div class="stat"><span>Logging streak</span><b>${streak(logged)}</b><span>days</span></div><div class="stat"><span>Weigh-in streak</span><b>${streak(weighed)}</b><span>days</span></div><div class="stat"><span>Logged, 28 days</span><b>${logPct}%</b><span>Weighed ${weighPct}%</span></div><div class="stat"><span>Average steps</span><b>${stepAvg ? fmt(stepAvg) : "–"}</b><span>${stepDays.length} days</span></div></section>
+  <section class="card stats"><div class="stat"><span>Logging streak</span><b>${streak(logged)}</b><span>days</span></div><div class="stat"><span>Weigh-in streak</span><b>${streak(weighed)}</b><span>days</span></div><div class="stat"><span>Food logged</span><b>${logPct}%</b><span>last 28 days</span></div><div class="stat"><span>Weighed in</span><b>${weighPct}%</b><span>last 28 days</span></div></section>
   ${eta ? `<section class="card"><h2>Goal</h2><p class="muted" style="margin:6px 0 0">${esc(eta)}</p></section>` : ""}
   <div class="grid2"><section class="card stack"><h2>Consistency</h2><div class="heat" role="img" aria-label="Logging and weigh-in consistency for the last 35 days">${last35.map(d => `<i title="${esc(short(d))}" class="${logged(d) && weighed(d) ? "both" : logged(d) ? "log" : weighed(d) ? "wgh" : ""}"></i>`).join("")}</div><div class="legend"><span><i class="key both"></i>Food and weight</span><span><i class="key log"></i>Food</span><span><i class="key wgh"></i>Weight</span></div></section>
   <section class="card stack"><h2>Nutrition averages</h2><div style="overflow-x:auto"><table class="tbl"><thead><tr><th></th><th>kcal</th><th>P</th><th>C</th><th>F</th></tr></thead><tbody>${ave.map(([l, a]) => `<tr><th>${l}</th>${a ? `<td>${fmt(a.kcal)}</td><td>${Math.round(a.p)}</td><td>${Math.round(a.c)}</td><td>${Math.round(a.f)}</td>` : `<td colspan="4" class="muted">No logged days</td>`}</tr>`).join("")}</tbody></table></div></section>
@@ -323,7 +310,6 @@ document.addEventListener("click", ev => {
   const b = ev.target.closest("[data-pro]"); if (!b) return;
   const a = b.dataset.pro;
   if (a === "online") searchOnline();
-  if (a === "speak") startSpeech();
   if (a === "irange") { insightRange = b.dataset.r === "all" ? "all" : +b.dataset.r; render(); }
   if (a === "copyentry") { const e = peek(cursor).foods.find(x => x.id === b.dataset.id); if (e) { clip = { type: "food", items: [copyItem(e)] }; setSave("Food copied"); render(); } }
   if (a === "copymeal") { clip = { type: "meal", items: peek(cursor).foods.filter(e => e.meal === b.dataset.meal).map(copyItem) }; setSave("Meal copied"); render(); }
@@ -367,8 +353,7 @@ document.addEventListener("submit", ev => {
     p.plan = targets(); touch(); render();
   }
   if (t === "track") {
-    const x = day(cursor), steps = num(d.get("steps")), m = {};
-    if (steps > 0) x.steps = Math.round(steps); else delete x.steps;
+    const x = day(cursor), m = {};
     for (const [k] of MEASURES) { const v = num(d.get("m-" + k)); if (v > 0) m[k] = +lenStore(v).toFixed(2); }
     if (Object.keys(m).length) x.m = m; else delete x.m;
     touch(cursor); render();
