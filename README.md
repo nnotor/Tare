@@ -32,6 +32,7 @@ Tare tracks calories and macros, scans packaged foods, estimates your actual ene
 - Build recipes, add custom foods, and remember corrected barcode values
 - Change a serving in g, ml, or oz and automatically rescale its nutrition
 - Edit past entries, including their amount, nutrition, meal, and date
+- Log by meal or use one simple food list
 - Copy and paste foods, meals, or entire days
 
 ### Progress trends
