@@ -195,6 +195,15 @@ input::placeholder { color: var(--faint); }
 .tbl tr:last-child th, .tbl tr:last-child td { border-bottom: 0; }
 .photogrid img { border-radius: var(--radius-sm); }
 
+/* Undo bar */
+#toast {
+  position: fixed; z-index: 7; left: max(12px, var(--safe-left)); right: max(12px, var(--safe-right)); bottom: calc(74px + var(--safe-bottom));
+  max-width: 480px; margin-inline: auto; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 6px 6px 6px 16px; background: var(--ink); color: var(--bg); border-radius: 16px; box-shadow: 0 8px 28px rgba(0, 0, 0, .45); font-size: 14px; font-weight: 600;
+}
+#toast span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#toast button { flex: none; min-width: 72px; min-height: 44px; padding: 8px 14px; border: 0; border-radius: 11px; background: var(--bg); color: var(--ink); font-weight: 750; cursor: pointer; }
+
 /* Add and edit sheet */
 dialog { background: var(--bg); border: 0; border-radius: 22px; }
 dialog::backdrop { background: rgba(0, 0, 0, .68); }

@@ -78,7 +78,7 @@ function restoreBackup(x) {
   render();
 }
 function clearSessionData() {
-  clip = null; editing = null; servState = null; onlineCache.clear(); productCache.clear(); onlineNext = 0; confirmPhoto = "";
+  clearUndo(); clip = null; editing = null; servState = null; onlineCache.clear(); productCache.clear(); onlineNext = 0; confirmPhoto = "";
   photoUrls.forEach(u => URL.revokeObjectURL(u)); photoUrls = [];
   if (!$("#dlg")?.open) M = null;
 }
@@ -639,6 +639,41 @@ function saveEdit(d) {
   if (moved) setSave(moved);
 }
 
+/* Undo deleted foods */
+const UNDO_MS = 10000;
+let undoStack = [], undoTimer = null;
+function showUndo() {
+  const bar = $("#toast"); if (!bar) return;
+  clearTimeout(undoTimer);
+  const last = undoStack[undoStack.length - 1];
+  if (!last) { bar.hidden = true; bar.replaceChildren(); return; }
+  const text = document.createElement("span"), button = document.createElement("button");
+  text.textContent = undoStack.length > 1 ? `Removed ${last.entry.name} (${undoStack.length} to undo)` : `Removed ${last.entry.name}`;
+  button.type = "button"; button.dataset.pro = "undo"; button.textContent = "Undo";
+  bar.replaceChildren(text, button);
+  bar.hidden = false;
+  undoTimer = setTimeout(clearUndo, UNDO_MS);
+}
+function clearUndo() { undoStack = []; clearTimeout(undoTimer); const bar = $("#toast"); if (bar) { bar.hidden = true; bar.replaceChildren(); } }
+function removeEntry(date, id) {
+  const x = day(date), index = x.foods.findIndex(e => e.id === id);
+  if (index < 0) return;
+  const [entry] = x.foods.splice(index, 1);
+  undoStack.push({ date, index, entry });
+  touch(date);
+  render();
+  showUndo();
+}
+function undoRemove() {
+  const item = undoStack.pop(); if (!item) return;
+  const x = day(item.date);
+  x.foods.splice(Math.min(item.index, x.foods.length), 0, item.entry);
+  cursor = item.date;
+  touch(item.date);
+  render();
+  showUndo();
+}
+
 /* Copy and paste */
 const copyItem = e => { const { id, ...rest } = e; return rest; };
 function dayTools(canCopy) {
@@ -737,8 +772,9 @@ document.addEventListener("click", ev => {
   if (a === "editentry") openEdit(b.dataset.id);
   if (a === "editdel" && editing) {
     if (!editing.confirmDelete) { editing.confirmDelete = true; b.textContent = "Confirm delete"; return; }
-    const x = day(editing.date); x.foods = x.foods.filter(e => e.id !== editing.id); touch(editing.date); editing = null; $("#dlg").close(); render();
+    const { date, id } = editing; editing = null; $("#dlg").close(); removeEntry(date, id);
   }
+  if (a === "undo") undoRemove();
   if (a === "copyentry") { const e = peek(cursor).foods.find(x => x.id === b.dataset.id); if (e) { clip = { type: "food", items: [copyItem(e)] }; setSave("Food copied"); render(); } }
   if (a === "copymeal") { clip = { type: "meal", items: peek(cursor).foods.filter(e => e.meal === b.dataset.meal).map(copyItem) }; setSave("Meal copied"); render(); }
   if (a === "copyday") { clip = { type: "day", items: peek(cursor).foods.map(copyItem) }; setSave("Day copied"); render(); }

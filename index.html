@@ -145,6 +145,7 @@ dialog::before{content:"";position:absolute;inset:0 0 auto;height:var(--safe-top
   <div id="banner"></div>
   <main id="main" class="stack"><div class="card muted">Loading your log.</div></main>
 </div>
+<div id="toast" role="status" aria-live="polite" hidden></div>
 <dialog id="dlg" aria-label="Add food"></dialog>
 <input id="importFile" type="file" accept="application/json,.json" hidden>
 
@@ -453,7 +454,7 @@ document.addEventListener("click",async ev=>{const b=ev.target.closest("[data-ac
   if(a==="view"){view=b.dataset.v;setup=false;try{history.replaceState(null,"","#"+view)}catch(e){location.hash=view}render();scrollTo(0,0)}
   if(a==="day"){cursor=add(cursor,+b.dataset.n);if(cursor>today())cursor=today();render()}
   if(a==="add")openAdd(b.dataset.meal,b.dataset.tab||"search");
-  if(a==="remove"){const x=day(cursor);x.foods=x.foods.filter(e=>e.id!==b.dataset.id);touch(cursor);render()}
+  if(a==="remove")removeEntry(cursor,b.dataset.id);
   if(a==="copyday"){day(cursor).foods=peek(add(cursor,-1)).foods.map(e=>({...e,id:uid()}));touch(cursor);render()}
   if(a==="range"){range=+b.dataset.r;render()}
   if(a==="setup"){view="plan";setup=true;render();scrollTo(0,0);$("#age")?.focus()}
