@@ -289,30 +289,61 @@ function smartFoods(meal, limit = 10) {
   }
   return [...score.values()].sort((a, b) => b.s - a.s).slice(0, limit).map(x => x.f);
 }
+/* Online search through USDA FoodData Central, which allows requests from web apps. */
+const USDA_SEARCH = "https://api.nal.usda.gov/fdc/v1/foods/search";
+const USDA_MICROS = { fiber: [[1079], "G"], sugar: [[2000, 1063], "G"], satfat: [[1258], "G"], sodium: [[1093], "MG"], chol: [[1253], "MG"], potassium: [[1092], "MG"], calcium: [[1087], "MG"], iron: [[1089], "MG"], vitc: [[1162], "MG"], vitd: [[1114], "UG"] };
+const ONLINE_NOTE = "Results from USDA FoodData Central. Compare branded foods with the label.";
+function titleFood(text) {
+  const s = String(text || "").trim();
+  return s && s === s.toUpperCase() ? s.toLowerCase().replace(/(^|[\s(/-])([a-z])/g, (m, a, b) => a + b.toUpperCase()) : s;
+}
+function usdaFood(x) {
+  const nutrients = new Map((x.foodNutrients || []).map(n => [n.nutrientId, n]));
+  const value = (ids, unitName) => { for (const id of ids) { const n = nutrients.get(id); if (n && n.value != null && Number.isFinite(Number(n.value)) && String(n.unitName).toUpperCase() === unitName) return Number(n.value); } return null; };
+  const kcal = value([1008, 2047, 2048], "KCAL"), p = value([1003], "G"), c = value([1005], "G"), f = value([1004], "G");
+  if ([kcal, p, c, f].some(v => v == null || v < 0)) return null;
+  const est = p * 4 + c * 4 + f * 9;
+  if (kcal > 902 || (Math.max(kcal, est) >= 40 && Math.abs(est - kcal) / Math.max(kcal, est) > .35)) return null;
+  const rawUnit = String(x.servingSizeUnit || "").toLowerCase(), amount = Number(x.servingSize), sized = amount > 0 && ["g", "grm", "ml", "mlt"].includes(rawUnit), servingUnit = rawUnit.startsWith("m") ? "ml" : "g", factor = sized ? amount / 100 : 1;
+  const house = String(x.householdServingFullText || "").trim(), plainAmount = `${+amount.toFixed(1)} ${servingUnit}`;
+  const serv = !sized ? "100 g" : house && !/^[\d.]+\s*(g|grm|ml|mlt)$/i.test(house) ? `${titleFood(house)} (${plainAmount})`.slice(0, 50) : plainAmount;
+  const desc = titleFood(x.description), brand = x.dataType === "Branded" ? titleFood(x.brandName || x.brandOwner) : "";
+  if (!desc) return null;
+  const name = (brand && !desc.toLowerCase().includes(brand.toLowerCase()) ? `${brand} ${desc}` : desc).slice(0, 90), micros = {};
+  for (const [key, [ids, unitName]] of Object.entries(USDA_MICROS)) { const v = value(ids, unitName); if (v != null && v >= 0) micros[key] = +(v * factor).toFixed(2); }
+  return { name, serv, kcal: Math.round(kcal * factor), p: +(p * factor).toFixed(1), c: +(c * factor).toFixed(1), f: +(f * factor).toFixed(1), ...(Object.keys(micros).length ? { n: micros } : {}), online: true, generic: x.dataType !== "Branded" };
+}
+function rankOnline(list, query) {
+  const whole = query.toLowerCase(), words = searchTokens(whole), score = f => (scoreFood(f.name, words, whole) ?? -60) + (f.generic ? 8 : 0) + (/\braw\b/i.test(f.name) ? 10 : 0);
+  const seen = new Set();
+  return list.map(food => ({ food, s: score(food) })).sort((a, b) => b.s - a.s).map(x => x.food).filter(f => { const key = `${f.name}|${f.serv}`.toLowerCase(); if (seen.has(key)) return false; seen.add(key); return true; }).slice(0, 15);
+}
 async function searchOnline() {
   const q = M.q.trim();
   if (q.length < 2) { M.onlineMsg = "Type at least 2 letters first."; refreshResults(); return; }
   const cacheKey = q.toLowerCase();
-  if (onlineCache.has(cacheKey)) { M.online = onlineCache.get(cacheKey); M.onlineMsg = M.online.length ? "Online results are crowd-sourced. Compare them with the label." : "No online results found."; refreshResults(); return; }
+  if (onlineCache.has(cacheKey)) { M.online = onlineCache.get(cacheKey); M.onlineMsg = M.online.length ? ONLINE_NOTE : "No online results found."; refreshResults(); return; }
+  if (navigator.onLine === false) { M.onlineMsg = "You are offline. Built-in and saved foods still work."; refreshResults(); return; }
   const wait = Math.ceil((onlineNext - Date.now()) / 1000);
-  if (wait > 0) { M.onlineMsg = `Open Food Facts limits searches. Try again in ${wait} seconds.`; refreshResults(); return; }
-  onlineNext = Date.now() + 7000;
-  M.onlineBusy = true; M.onlineMsg = "Searching Open Food Facts."; refreshResults();
+  if (wait > 0) { M.onlineMsg = wait > 60 ? `The free USDA search limit was reached. Try again in about ${Math.ceil(wait / 60)} minutes.` : `Try online search again in ${wait} seconds.`; refreshResults(); return; }
+  onlineNext = Date.now() + 2000;
+  M.onlineBusy = true; M.onlineMsg = "Searching USDA FoodData Central."; refreshResults();
   const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 12000), asked = q;
   try {
-    const r = await fetch(`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q.slice(0, 80))}&search_simple=1&action=process&json=1&page_size=12&fields=code,product_name,brands,serving_size,serving_quantity,nutriments`, { signal: ctl.signal, credentials: "omit", referrerPolicy: "no-referrer" });
+    const params = new URLSearchParams({ api_key: "DEMO_KEY", query: q.slice(0, 80), pageSize: "40", dataType: "Foundation,SR Legacy,Branded" });
+    const r = await fetch(`${USDA_SEARCH}?${params}`, { signal: ctl.signal, credentials: "omit", referrerPolicy: "no-referrer" });
+    if (r.status === 429) { const e = new Error("limit"); e.limit = true; throw e; }
     if (!r.ok) throw new Error("search");
     const j = await r.json();
-    const list = (j.products || []).filter(x => x.product_name).map(x => {
-      const info = parseProduct(x, String(x.code || "")), b = info.bases[0];
-      return [b.kcal, b.p, b.c, b.f].some(v => v == null) ? null : { name: info.name, serv: b.label, kcal: b.kcal, p: num(b.p), c: num(b.c), f: num(b.f), n: b.n, online: true };
-    }).filter(Boolean);
+    const list = rankOnline((j.foods || []).map(usdaFood).filter(Boolean), q);
     onlineCache.set(cacheKey, list);
     if (!M || M.q.trim() !== asked) return;
     M.online = list;
-    M.onlineMsg = list.length ? "Online results are crowd-sourced. Compare them with the label." : "No online results found.";
-  } catch (e) { onlineNext = Date.now() + 60000; if (M) M.onlineMsg = "Open Food Facts is busy or you are offline. Try again in a minute. Built-in foods and saved barcodes still work."; }
-  finally { clearTimeout(timer); if (M) { M.onlineBusy = false; refreshResults(); } }
+    M.onlineMsg = list.length ? ONLINE_NOTE : "No online results found.";
+  } catch (e) {
+    onlineNext = Date.now() + (e.limit ? 1800000 : 10000);
+    if (M) M.onlineMsg = e.limit ? "The free USDA search limit was reached. Try again later. Built-in foods and barcode scanning still work." : "Online search could not connect. Check your connection and try again. Built-in foods still work.";
+  } finally { clearTimeout(timer); if (M) { M.onlineBusy = false; refreshResults(); } }
 }
 function refreshResults() { const r = $("#res"), m = $("#onlineMsg"), b = $("#onlineBtn"); if (r) r.innerHTML = resultsHTML(); if (m) { m.textContent = M.onlineMsg || ""; m.hidden = !M.onlineMsg; } if (b) b.disabled = !!M.onlineBusy; }
 function searchTools() {

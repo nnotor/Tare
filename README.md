@@ -27,7 +27,7 @@ Tare tracks calories and macros, scans packaged foods, estimates your actual ene
 - Scan EAN-13, EAN-8, UPC-A, and UPC-E barcodes with the live camera or a photo
 - Look up new products through Open Food Facts and review the values before logging
 - Read Nutrition Facts labels from a photo on your device
-- Search 102 built-in foods, your saved foods, and Open Food Facts
+- Search 102 built-in foods, your saved foods, and USDA FoodData Central
 - Get typo-tolerant autocomplete and smart suggestions based on what you usually eat at each meal
 - Build recipes, add custom foods, and remember corrected barcode values
 - Change a serving in g, ml, or oz and automatically rescale its nutrition
@@ -85,7 +85,8 @@ Some requests still leave your device:
 | --- | --- | --- |
 | GitHub Pages | Loading or updating the app | Standard connection details, such as IP address and browser type |
 | jsDelivr | Downloading the barcode or label reader | Standard connection details |
-| Open Food Facts | Looking up a new barcode or using **Search online** | The barcode number or search text, plus standard connection details |
+| Open Food Facts | Looking up a new barcode | The barcode number and standard connection details |
+| USDA FoodData Central | Using **Search online** | The search text and standard connection details |
 
 Camera images, label photos, and progress photos are processed on your device and are not uploaded by Tare.
 
@@ -104,7 +105,8 @@ Accurate food logging and regular weigh-ins produce the best estimates.
 - HTML, CSS, and JavaScript with no build step
 - [ZXing](https://github.com/zxing-js/library) for barcode reading
 - [Tesseract.js](https://github.com/naptha/tesseract.js) for label reading
-- [Open Food Facts](https://world.openfoodfacts.org/) for product data
+- [Open Food Facts](https://world.openfoodfacts.org/) for barcode product data
+- [USDA FoodData Central](https://fdc.nal.usda.gov/) for online food search
 - A service worker for offline use
 
 ## Disclaimer
