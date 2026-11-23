@@ -16,12 +16,108 @@ const DAY_TYPES = { normal: ["Normal", 1], high: ["High", 1.15], low: ["Low", .8
 const MEASURES = [["waist", "Waist"], ["chest", "Chest"], ["hips", "Hips"], ["arm", "Arm"], ["thigh", "Thigh"]];
 const OCR = {
   script: "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js",
+  scriptIntegrity: "sha384-GJqSu7vueQ9qN0E9yLPb3Wtpd7OrgK8KmYzC8T1IysG1bcvxvIO4qtYR/D3A991F",
   worker: "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js",
   core: "https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.0",
   lang: "https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng@1.0.0/4.0.0_best_int"
 };
 const onlineCache = new Map();
 let onlineNext = 0, clip = null, insightRange = 30, contributor = "kcal", ocrLoad = null, photoUrls = [], confirmPhoto = "";
+
+/* Safe backup restore */
+const oneOf = (value, allowed, fallback) => allowed.includes(value) ? value : fallback;
+const isDateKey = v => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+const safeNumber = (v, min, max, fallback = 0) => { const n = Number(v); return Number.isFinite(n) ? clamp(n, min, max) : fallback; };
+const safeWeek = w => Array.isArray(w) && w.length === 7 ? w.map(x => oneOf(x, Object.keys(DAY_TYPES), "normal")) : undefined;
+function cleanPlan(plan) {
+  const x = plan && typeof plan === "object" ? plan : {};
+  return { kcal: Math.round(safeNumber(x.kcal, 0, 10000)), p: Math.round(safeNumber(x.p, 0, 1000)), c: Math.round(safeNumber(x.c, 0, 2000)), f: Math.round(safeNumber(x.f, 0, 1000)), setOn: isDateKey(x.setOn) ? x.setOn : today(), floored: x.floored === true };
+}
+function cleanProfile(raw) {
+  const x = raw && typeof raw === "object" ? raw : {}, modes = ["coached", "collab", "manual", "off"], out = {
+    unit: oneOf(x.unit, ["lb", "kg"], "lb"), sex: oneOf(x.sex, ["m", "f"], "m"),
+    activity: oneOf(Number(x.activity), [1.2, 1.375, 1.55, 1.725, 1.9], 1.55), goal: oneOf(Number(x.goal), [-1, -.75, -.5, -.25, 0, .25, .5], -.5), protein: oneOf(Number(x.protein), [1.6, 1.8, 2.2], 1.8),
+    plan: cleanPlan(x.plan), nudge: safeNumber(x.nudge, -300, 300), diet: oneOf(x.diet, ["balanced", "lowcarb", "keto", "carb"], "balanced"), useTargets: x.useTargets === true, hideMeals: x.hideMeals === true
+  };
+  if (Number(x.age) > 0) out.age = safeNumber(x.age, 1, 120);
+  if (Number(x.heightCm) > 0) out.heightCm = safeNumber(x.heightCm, 20, 300);
+  if (modes.includes(x.mode)) out.mode = x.mode;
+  if (modes.includes(x.lastMode)) out.lastMode = x.lastMode;
+  if (modes.includes(x.lastCoachMode)) out.lastCoachMode = x.lastCoachMode;
+  if (Number(x.startKg) > 0) out.startKg = safeNumber(x.startKg, 10, 700);
+  if (Number(x.goalKg) > 0) out.goalKg = safeNumber(x.goalKg, 10, 700);
+  if (x.manual) { const { setOn, floored, ...manual } = cleanPlan(x.manual); out.manual = manual; }
+  const week = safeWeek(x.week); if (week) out.week = week;
+  if (isDateKey(x.lastBackup)) out.lastBackup = x.lastBackup;
+  if (Array.isArray(x.planHistory)) out.planHistory = x.planHistory.filter(h => h && (h.from === "0000-00-00" || isDateKey(h.from))).slice(-400).map(h => { const { kcal, p, c, f } = cleanPlan(h); return { from: h.from, kcal, p, c, f, week: safeWeek(h.week) || null }; });
+  return out;
+}
+function cleanCustom(list) {
+  if (!Array.isArray(list)) return [];
+  return list.filter(f => f && typeof f === "object" && String(f.name || "").trim()).slice(0, 300).map(f => {
+    const n = cleanN(f.n), barcode = String(f.barcode || "").replace(/\D/g, "").slice(0, 14);
+    return { name: String(f.name).trim().slice(0, 100), serv: String(f.serv || "1 serving").slice(0, 50), kcal: safeNumber(f.kcal, 0, 10000), p: safeNumber(f.p, 0, 1000), c: safeNumber(f.c, 0, 2000), f: safeNumber(f.f, 0, 1000), ...(barcode ? { barcode } : {}), ...(f.recipe === true ? { recipe: true } : {}), ...(n ? { n } : {}) };
+  });
+}
+function cleanEntry(e) {
+  const n = cleanN(e && e.n);
+  return { id: uid(), name: String(e?.name ?? "Food").slice(0, 100), serv: String(e?.serv || "1 serving").slice(0, 50), qty: safeNumber(e?.qty, .01, 1000, 1), meal: MEALS.includes(e?.meal) ? e.meal : "Snacks", kcal: safeNumber(e?.kcal, 0, 50000), p: safeNumber(e?.p, 0, 5000), c: safeNumber(e?.c, 0, 5000), f: safeNumber(e?.f, 0, 5000), ...(n ? { n } : {}) };
+}
+function restoreBackup(x) {
+  if (!x || typeof x !== "object" || !x.profile?.plan || !x.days || typeof x.days !== "object" || Array.isArray(x.days)) throw new Error("backup");
+  const days = {};
+  for (const [k, v] of Object.entries(x.days)) {
+    if (!isDateKey(k) || !v || !Array.isArray(v.foods)) continue;
+    days[k] = { ...(Number(v.w) > 0 ? { w: safeNumber(v.w, 10, 700) } : {}), ...(v.skip === true ? { skip: true } : {}), ...cleanDayExtras(v), foods: v.foods.slice(0, 500).map(cleanEntry) };
+  }
+  const wasDemo = S.demo;
+  S = { demo: false, profile: cleanProfile(x.profile), days: wasDemo ? days : { ...S.days, ...days }, custom: Array.isArray(x.custom) ? cleanCustom(x.custom) : wasDemo ? [] : S.custom };
+  clearSessionData();
+  cursor = today();
+  touchAll();
+  render();
+}
+function clearSessionData() {
+  clip = null; editing = null; servState = null; onlineCache.clear(); onlineNext = 0; confirmPhoto = "";
+  photoUrls.forEach(u => URL.revokeObjectURL(u)); photoUrls = [];
+  if (!$("#dlg")?.open) M = null;
+}
+
+/* Keep Log on the current day after the app resumes */
+let watchedDay = "";
+function syncToday() {
+  const now = today();
+  if (now === watchedDay) return;
+  if (cursor === watchedDay) cursor = now;
+  watchedDay = now;
+  if (!$("#dlg")?.open) render();
+}
+function startDayWatch() {
+  watchedDay = today();
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) syncToday(); });
+  addEventListener("focus", syncToday);
+  addEventListener("pageshow", syncToday);
+  setInterval(() => { if (!document.hidden) syncToday(); }, 30000);
+}
+
+/* Targets stay attached to the dates they were used */
+function syncPlanHistory() {
+  const p = S.profile; if (S.demo || !p?.plan) return;
+  const h = p.planHistory || (p.planHistory = []), week = p.mode === "off" ? null : safeWeek(p.week) || null, entry = { kcal: p.plan.kcal, p: p.plan.p, c: p.plan.c, f: p.plan.f, week };
+  const same = a => a && a.kcal === entry.kcal && a.p === entry.p && a.c === entry.c && a.f === entry.f && JSON.stringify(a.week || null) === JSON.stringify(week);
+  if (!h.length) { h.push({ from: "0000-00-00", ...entry }); return; }
+  if (same(h[h.length - 1])) return;
+  const from = today();
+  if (h[h.length - 1].from === from) h[h.length - 1] = { from, ...entry };
+  else h.push({ from, ...entry });
+}
+function planForDate(date) {
+  const p = S.profile, current = { ...p.plan, week: p.mode === "off" ? null : p.week };
+  if (date >= today() || !p.planHistory?.length) return current;
+  let found = null;
+  for (const h of p.planHistory) if (h.from <= date) found = h;
+  return found ? { ...p.plan, kcal: found.kcal, p: found.p, c: found.c, f: found.f, week: found.week } : current;
+}
 
 /* Tracking-only mode */
 const coachingOff = () => S.profile?.mode === "off";
@@ -44,7 +140,7 @@ function targetsPanel(g, e, setupMode) {
 function trackingTargets() {
   const p = S.profile, m = p.manual || { kcal: "", p: "", c: "", f: "" }, on = !!p.useTargets;
   return `<form class="card form" data-form="tracktargets"><h2 class="full">Daily targets</h2><label class="full" style="display:flex;align-items:center;gap:8px"><input id="useTargets" name="use" type="checkbox" style="width:auto" ${on ? "checked" : ""}>Show my own calorie and macro targets</label>
-  <div class="full form" id="trackTargetRow" ${on ? "" : "hidden"}><label>Calories<input id="tk" name="kcal" type="number" min="1" max="8000" value="${esc(m.kcal)}"></label><label>Protein (g)<input id="tp" name="p" type="number" min="0" max="500" value="${esc(m.p)}"></label><label>Carbs (g)<input id="tc" name="c" type="number" min="0" max="1000" value="${esc(m.c)}"></label><label>Fat (g)<input id="tf" name="f" type="number" min="0" max="400" value="${esc(m.f)}"></label></div>
+  <div class="full form" id="trackTargetRow" ${on ? "" : "hidden"}><label>Calories<input id="tk" name="kcal" type="number" min="1" max="8000" value="${esc(m.kcal)}" ${on ? "" : "disabled"}></label><label>Protein (g)<input id="tp" name="p" type="number" min="0" max="500" value="${esc(m.p)}" ${on ? "" : "disabled"}></label><label>Carbs (g)<input id="tc" name="c" type="number" min="0" max="1000" value="${esc(m.c)}" ${on ? "" : "disabled"}></label><label>Fat (g)<input id="tf" name="f" type="number" min="0" max="400" value="${esc(m.f)}" ${on ? "" : "disabled"}></label></div>
   <p class="err full" id="trackErr" hidden></p><div class="full"><button class="btn primary">Save targets</button></div></form>`;
 }
 
@@ -68,8 +164,8 @@ function applyDiet(t, kg) {
   return { kcal, p: pr, c, f, setOn: t.setOn, floored };
 }
 function dayPlan(date) {
-  const p = S.profile, g = p.plan, week = p.week;
-  if (p.mode === "off" || !week || week.every(x => x === "normal")) return { ...g, type: "normal" };
+  const { week, ...g } = planForDate(date);
+  if (!week || week.every(x => x === "normal")) return { ...g, type: "normal" };
   const mult = t => (DAY_TYPES[t] || DAY_TYPES.normal)[1], sum = week.reduce((a, t) => a + mult(t), 0);
   const type = week[parse(date).getDay()], kcal = Math.max(500, Math.round(g.kcal * mult(type) * 7 / sum / 10) * 10);
   const pr = type === "fast" ? Math.min(g.p, Math.round(kcal * .4 / 4)) : g.p;
@@ -97,7 +193,7 @@ function planExtras() {
   <label class="full">Goal weight (${unit()}, optional)<input id="pgoal" name="goalWeight" type="number" inputmode="decimal" step="0.1" min="20" max="1000" value="${p.goalKg ? toUser(p.goalKg).toFixed(1) : ""}"></label>
   ${eta ? `<p class="muted full" style="margin:0">${esc(eta)}</p>` : ""}
   <label class="full" id="nudgeRow" ${mode === "collab" ? "" : "hidden"}>Adjust coach's calories (-300 to +300)<input id="pnudge" name="nudge" type="number" step="10" min="-300" max="300" value="${num(p.nudge)}"></label>
-  <div class="full form" id="manualRow" ${mode === "manual" ? "" : "hidden"}><label>Calories<input id="mk" name="mk" type="number" min="800" max="8000" value="${m.kcal}"></label><label>Protein (g)<input id="mp" name="mp" type="number" min="0" max="500" value="${m.p}"></label><label>Carbs (g)<input id="mc" name="mc" type="number" min="0" max="1000" value="${m.c}"></label><label>Fat (g)<input id="mf" name="mf" type="number" min="0" max="400" value="${m.f}"></label></div>
+  <div class="full form" id="manualRow" ${mode === "manual" ? "" : "hidden"}><label>Calories<input id="mk" name="mk" type="number" min="800" max="8000" value="${m.kcal}" ${mode === "manual" ? "" : "disabled"}></label><label>Protein (g)<input id="mp" name="mp" type="number" min="0" max="500" value="${m.p}" ${mode === "manual" ? "" : "disabled"}></label><label>Carbs (g)<input id="mc" name="mc" type="number" min="0" max="1000" value="${m.c}" ${mode === "manual" ? "" : "disabled"}></label><label>Fat (g)<input id="mf" name="mf" type="number" min="0" max="400" value="${m.f}" ${mode === "manual" ? "" : "disabled"}></label></div>
   <div class="full"><b style="font-size:13px">Weekly day types</b><div class="weekgrid">${DAY_NAMES.map((d, i) => `<label>${d}<select id="wk${i}" name="wk${i}">${Object.entries(DAY_TYPES).map(([k, v]) => opt(k, v[0], week[i])).join("")}</select></label>`).join("")}</div><p class="muted" style="margin:6px 0 0;font-size:13px">High, low, and fasting days keep your weekly calorie average the same. Tare allows up to 2 fasting days per week.</p></div>
   <p class="err full" id="coachErr" hidden></p><div class="full"><button class="btn primary">Save program</button></div></form>`;
 }
@@ -156,13 +252,15 @@ function rankFoods(query) {
   if (!words.length) return [];
   const usual = smartFoods(M.meal, 60), boost = new Map(usual.map((f, i) => [f.name, 26 - Math.min(i, 20)])), seen = new Set(), ranked = [];
   for (const food of [...S.custom, ...usual, ...FOODS]) {
-    if (seen.has(food.name)) continue;
-    seen.add(food.name);
+    const plain = `n:${food.name}|${food.serv}`, key = food.barcode ? `b:${food.barcode}` : plain;
+    if (seen.has(key)) continue;
+    seen.add(key); seen.add(plain);
     const base = scoreFood(food.name, words, whole);
     if (base != null) ranked.push({ food, score: base + (boost.get(food.name) || 0) + (S.custom.includes(food) ? 8 : 0) });
   }
   return ranked.sort((a, b) => b.score - a.score || a.food.name.localeCompare(b.food.name)).slice(0, 30).map(x => x.food);
 }
+const foodKey = f => f.barcode ? `b:${f.barcode}` : `n:${f.name}|${f.serv}`;
 function highlightName(name) {
   const text = String(name), lower = text.toLowerCase(), marks = new Array(text.length).fill(false);
   for (const word of searchTokens(M?.q || "")) {
@@ -207,7 +305,7 @@ async function searchOnline() {
     const j = await r.json();
     const list = (j.products || []).filter(x => x.product_name).map(x => {
       const info = parseProduct(x, String(x.code || "")), b = info.bases[0];
-      return b.kcal == null ? null : { name: info.name, serv: b.label, kcal: b.kcal, p: num(b.p), c: num(b.c), f: num(b.f), n: b.n, online: true };
+      return [b.kcal, b.p, b.c, b.f].some(v => v == null) ? null : { name: info.name, serv: b.label, kcal: b.kcal, p: num(b.p), c: num(b.c), f: num(b.f), n: b.n, online: true };
     }).filter(Boolean);
     onlineCache.set(cacheKey, list);
     if (!M || M.q.trim() !== asked) return;
@@ -224,17 +322,17 @@ function searchTools() {
 /* Nutrition label scanner */
 function loadOCR() {
   if (window.Tesseract) return Promise.resolve(window.Tesseract);
-  return ocrLoad || (ocrLoad = new Promise((res, rej) => { const s = document.createElement("script"); s.src = OCR.script; s.crossOrigin = "anonymous"; s.referrerPolicy = "no-referrer"; s.onload = () => res(window.Tesseract); s.onerror = () => { ocrLoad = null; s.remove(); rej(new Error("ocr")); }; document.head.append(s); }));
+  return ocrLoad || (ocrLoad = new Promise((res, rej) => { const s = document.createElement("script"); s.src = OCR.script; s.integrity = OCR.scriptIntegrity; s.crossOrigin = "anonymous"; s.referrerPolicy = "no-referrer"; s.onload = () => res(window.Tesseract); s.onerror = () => { ocrLoad = null; s.remove(); rej(new Error("ocr")); }; document.head.append(s); }));
 }
 function parseLabel(raw) {
   const text = String(raw || "").replace(/[|]/g, " ").replace(/\r/g, ""), lines = text.split("\n");
-  const fix = s => Number(String(s).replace(/[Oo]/g, "0").replace(/[lI]/g, "1").replace(/,/g, "."));
+  const fix = s => { const v = String(s).replace(/[Oo]/g, "0").replace(/[lI]/g, "1"); return Number(/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(v) ? v.replace(/,/g, "") : v.replace(/,/g, ".")); };
   const grab = (re, line = false) => { for (const l of line ? lines : [text]) { const m = l.match(re); if (m) { const v = fix(m[1]); if (Number.isFinite(v)) return v; } } return null; };
   const unitFix = (v, u) => v == null ? null : /^mcg|^ug|^µg/i.test(u || "") ? v / 1000 : /^g/i.test(u || "") ? v * 1000 : v;
   const mg = re => { const m = text.match(re); return m ? unitFix(fix(m[1]), m[2]) : null; };
   const out = {
     serv: (text.match(/serving size[:\s]*([^\n]{1,32})/i)?.[1] || "1 serving").trim(),
-    kcal: grab(/calories(?!\s*from)[^\d\n]{0,12}([\dOo]{1,4})/i, true) ?? grab(/energy[^\n]*?([\d]{1,4})\s*kcal/i, true),
+    kcal: grab(/calories(?!\s*from)[^\d\n]{0,12}(\d{1,3},\d{3}|[\dOo]{1,4})/i, true) ?? grab(/energy[^\n]*?([\d]{1,4})\s*kcal/i, true),
     f: grab(/total\s*fat[^\d\n]{0,6}([\dOolI]+(?:[.,]\d+)?)\s*g/i, true) ?? grab(/^\s*fat[^\d\n]{0,6}([\dOolI]+(?:[.,]\d+)?)\s*g/im, true),
     c: grab(/(?:total\s*)?carb[a-z.]*[^\d\n]{0,6}([\dOolI]+(?:[.,]\d+)?)\s*g/i, true),
     p: grab(/protein[^\d\n]{0,6}([\dOolI]+(?:[.,]\d+)?)\s*g/i, true)
@@ -279,8 +377,8 @@ function shrinkImage(file, max) {
 const SERVING_UNITS = { g: 1, ml: 1, oz: 28.3495 };
 let servState = null;
 function parseServing(text) {
-  const hits = [...String(text || "").matchAll(/(\d+(?:[.,]\d+)?)\s*(kg|grams?|g|ml|l|oz)\b/gi)].map(m => {
-    const v = Number(m[1].replace(",", ".")), u = m[2].toLowerCase();
+  const hits = [...String(text || "").matchAll(/(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:[.,]\d+)?)\s*(kg|grams?|g|ml|l|oz)\b/gi)].map(m => {
+    const raw = m[1], v = Number(/^\d{1,3}(,\d{3})+/.test(raw) ? raw.replace(/,/g, "") : raw.replace(",", ".")), u = m[2].toLowerCase();
     if (u === "kg") return { amt: v * 1000, unit: "g" };
     if (u === "l") return { amt: v * 1000, unit: "ml" };
     return { amt: v, unit: u.startsWith("g") ? "g" : u };
@@ -363,7 +461,7 @@ function saveRecipe(addIt) {
   if (!name || !(s > 0)) { if (err) { err.textContent = "Add a recipe name and a serving count."; err.hidden = false; } return; }
   const t = recipeTotals(r), n = {}; for (const k in t.n) n[k] = +(t.n[k] / s).toFixed(2);
   const food = { name: name.slice(0, 80), serv: "1 serving", kcal: Math.round(t.kcal / s), p: +(t.p / s).toFixed(1), c: +(t.c / s).toFixed(1), f: +(t.f / s).toFixed(1), recipe: true, ...(Object.keys(n).length ? { n } : {}) };
-  S.custom = [food, ...S.custom.filter(c => c.name !== food.name)].slice(0, 300); touch();
+  S.custom = [food, ...S.custom.filter(c => c.barcode || c.name !== food.name)].slice(0, 300); touch();
   if (addIt) addEntry(food, 1);
   $("#dlg").close(); render();
 }
@@ -416,7 +514,7 @@ function microsCard(x) {
 function openGoals() {
   const p = S.profile, g = p.plan || {}, off = coachingOff(), manual = p.mode === "manual";
   M = { meal: "Goals", tab: "goals", q: "", sel: null, scan: { state: "idle" } };
-  const value = v => v ? v : "";
+  const value = v => g.kcal ? v : "";
   $("#dlg").innerHTML = `<div class="dlgwrap"><div class="dlghead"><div class="mealhead"><h2>Macro goals</h2><button class="icon" data-act="close" aria-label="Close">×</button></div></div><div class="dlgbody"><form class="form" data-form="goals">
   <label class="full">Protein (g)<input id="gp" name="p" type="number" inputmode="numeric" min="0" max="500" step="1" required value="${value(g.p)}"></label>
   <label class="full">Carbs (g)<input id="gc" name="c" type="number" inputmode="numeric" min="0" max="1000" step="1" required value="${value(g.c)}"></label>
@@ -474,7 +572,7 @@ function logLayoutCard() {
 function logView() {
   const t = totals(cursor), g = dayPlan(cursor), left = g.kcal - t.kcal, x = peek(cursor), canCopy = !x.foods.length && peek(add(cursor, -1)).foods.length;
   const weekStart = add(cursor, -parse(cursor).getDay()), week = Array.from({ length: 7 }, (_, i) => add(weekStart, i));
-  const r = 52, len = 2 * Math.PI * r, pct = g.kcal ? Math.min(1, t.kcal / g.kcal) : 0, hasWeight = weights().length > 0;
+  const r = 52, len = 2 * Math.PI * r, pct = g.kcal ? Math.min(1, t.kcal / g.kcal) : 0, hasWeight = weights(cursor).length > 0;
   const tools = dayTools(canCopy);
   return `<div class="today-head"><h1>${esc(long(cursor))}</h1><div class="weeknav"><button class="iconbtn" data-act="day" data-n="-7" aria-label="Previous week">${ICONS.back}</button><button class="iconbtn" data-act="day" data-n="7" aria-label="Next week" ${cursor >= today() ? "disabled" : ""}>${ICONS.next}</button></div></div>
   <div class="weekstrip">${week.map(dayChip).join("")}</div>
@@ -656,6 +754,7 @@ document.addEventListener("click", ev => {
 document.addEventListener("input", ev => {
   const t = ev.target;
   if (t.id === "q" && M) { M.online = null; M.onlineMsg = ""; refreshResults(); }
+  if (t.id === "kg") t.dataset.edited = "1";
   if (t.id === "servAmt") applyServingAmount();
   if (t.dataset.servMacro && servState) readServingBase();
   if ($("#editTotal")) updateEditTotal();
@@ -680,8 +779,8 @@ document.addEventListener("change", ev => {
   if (t.id === "servUnit") { changeServingUnit(t); refreshFormMicros(); }
   if (t.id === "hideMeals") { S.profile.hideMeals = t.checked; touch(); }
   if (t.id === "coachSwitch") syncCoachFields();
-  if (t.id === "useTargets") $("#trackTargetRow").hidden = !t.checked;
-  if (t.id === "pmode") { $("#nudgeRow").hidden = t.value !== "collab"; $("#manualRow").hidden = t.value !== "manual"; }
+  if (t.id === "useTargets") { const row = $("#trackTargetRow"); row.hidden = !t.checked; row.querySelectorAll("input").forEach(i => { i.disabled = !t.checked; }); }
+  if (t.id === "pmode") { const row = $("#manualRow"), manual = t.value === "manual"; $("#nudgeRow").hidden = t.value !== "collab"; row.hidden = !manual; row.querySelectorAll("input").forEach(i => { i.disabled = !manual; }); }
   if (t.id === "contrib") { contributor = t.value; render(); }
   if (t.dataset.proChange === "period") { const x = day(cursor); if (t.checked) x.period = true; else delete x.period; touch(cursor); render(); }
   if (t.id === "labelPhoto" && t.files[0]) readLabel(t.files[0]);
