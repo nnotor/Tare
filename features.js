@@ -1,5 +1,5 @@
 /* Tare feature module: coaching programs, recipes, label scanning, tracking, and insights. */
-window.TARE_FEATURES_BUILD = "12";
+window.TARE_FEATURES_BUILD = "13";
 // A page from an older release cannot safely run this code, so reload it into the matching version.
 if (window.TARE_BUILD !== window.TARE_FEATURES_BUILD && !window.repairTareBuild) {
   try {
@@ -517,12 +517,12 @@ function fillLabelPrefill() {
 /* Recipes */
 function recipeTotals(r) { const t = { kcal: 0, p: 0, c: 0, f: 0, n: {} }; for (const i of r.items) { for (const k of ["kcal", "p", "c", "f"]) t[k] += i.food[k] * i.qty; if (i.food.n) for (const k in i.food.n) t.n[k] = (t.n[k] || 0) + i.food.n[k] * i.qty; } return t; }
 function recipeBody() {
-  const r = M.recipe || (M.recipe = { name: "", servings: 4, q: "", items: [] }), t = recipeTotals(r), s = Math.max(.1, num(r.servings, 1)), q = r.q.trim().toLowerCase(), found = q ? [...S.custom.filter(f => !f.recipe), ...FOODS].filter(f => q.split(/\s+/).every(w => f.name.toLowerCase().includes(w))).slice(0, 8) : [];
+  const r = M.recipe || (M.recipe = { name: "", servings: 4, q: "", items: [] }), t = recipeTotals(r), s = Math.max(.1, num(r.servings, 1)), q = r.q.trim(), found = q ? rankFoods(q).filter(f => !f.recipe).slice(0, 8) : [];
   M.recipeFound = found;
   return `<div class="form"><label>Recipe name<input id="rname" maxlength="70" value="${esc(r.name)}" placeholder="Turkey chili"></label><label>Servings made<input id="rserv" type="number" min="0.5" step="0.5" value="${esc(r.servings)}"></label></div>
   <input id="rq" type="search" placeholder="Add an ingredient" aria-label="Add an ingredient" value="${esc(r.q)}">
-  ${found.length ? `<div class="results">${found.map((f, i) => `<button type="button" class="result" data-pro="ringadd" data-i="${i}"><span><b>${esc(f.name)}</b><small>${esc(f.serv)}</small></span><span class="mono">${fmt(f.kcal)}</span></button>`).join("")}</div>` : ""}
-  ${r.items.length ? `<div class="stack" style="gap:6px">${r.items.map((it, i) => `<div class="chooser" style="grid-template-columns:76px minmax(0,1fr) auto"><input aria-label="Amount of ${esc(it.food.name)}" data-ring="${i}" type="number" min="0.05" step="any" value="${it.qty}"><span><b>${esc(it.food.name)}</b><br><small class="muted">${esc(it.food.serv)}</small></span><button type="button" class="icon" data-pro="ringdel" data-i="${i}" aria-label="Remove ${esc(it.food.name)}">×</button></div>`).join("")}</div><p class="mono muted" id="rTotal" style="margin:0">Per serving: ${fmt(t.kcal / s)} kcal · ${Math.round(t.p / s)}P ${Math.round(t.c / s)}C ${Math.round(t.f / s)}F</p><p class="err" id="rErr" hidden></p><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn primary" data-pro="rsave" data-add="1">Save and add 1 serving</button><button type="button" class="btn" data-pro="rsave">Save recipe</button></div>` : `<p class="muted" style="margin:0">Search above to add your first ingredient.</p>`}`;
+  ${found.length ? `<div class="results">${found.map((f, i) => `<button type="button" class="result" data-pro="ringadd" data-i="${i}"><span class="fooditem">${foodIcon(f.name)}<span><b>${esc(f.name)}</b><small>${esc(f.serv)}</small></span></span><span class="mono">${fmt(f.kcal)}</span></button>`).join("")}</div>` : ""}
+  ${r.items.length ? `<div class="stack" style="gap:6px">${r.items.map((it, i) => `<div class="chooser" style="grid-template-columns:76px minmax(0,1fr) auto"><input aria-label="Amount of ${esc(it.food.name)}" data-ring="${i}" type="number" min="0.05" step="any" value="${it.qty}"><span><b>${esc(it.food.name)}</b><br><small class="muted">${it.food.db ? "× 100 g" : esc(it.food.serv)}</small></span><button type="button" class="icon" data-pro="ringdel" data-i="${i}" aria-label="Remove ${esc(it.food.name)}">×</button></div>`).join("")}</div><p class="mono muted" id="rTotal" style="margin:0">Per serving: ${fmt(t.kcal / s)} kcal · ${Math.round(t.p / s)}P ${Math.round(t.c / s)}C ${Math.round(t.f / s)}F</p><p class="err" id="rErr" hidden></p><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn primary" data-pro="rsave" data-add="1">Save and add 1 serving</button><button type="button" class="btn" data-pro="rsave">Save recipe</button></div>` : `<p class="muted" style="margin:0">Search above to add your first ingredient.</p>`}`;
 }
 function saveRecipe(addIt) {
   const r = M.recipe, name = String(r.name).trim(), s = num(r.servings), err = $("#rErr");
@@ -848,8 +848,8 @@ document.addEventListener("click", ev => {
   if (a === "copyentry") { const e = peek(cursor).foods.find(x => x.id === b.dataset.id); if (e) { clip = { type: "food", items: [copyItem(e)] }; setSave("Food copied"); render(); } }
   if (a === "copymeal") { clip = { type: "meal", items: peek(cursor).foods.filter(e => e.meal === b.dataset.meal).map(copyItem) }; setSave("Meal copied"); render(); }
   if (a === "copyday") { clip = { type: "day", items: peek(cursor).foods.map(copyItem) }; setSave("Day copied"); render(); }
-  if (a === "pastemeal" && clip) { const x = day(cursor); clip.items.forEach(e => x.foods.push({ ...e, id: uid(), t: clockNow(), meal: b.dataset.meal })); touch(cursor); render(); }
-  if (a === "pasteflat" && clip) { const x = day(cursor); clip.items.forEach(e => x.foods.push({ ...e, id: uid(), ...(clip.type === "day" ? {} : { t: clockNow() }) })); touch(cursor); render(); }
+  if (a === "pastemeal" && clip) { const x = day(cursor); clip.items.forEach(e => { const { t, ...rest } = e; x.foods.push({ ...rest, id: uid(), ...entryTime(cursor), meal: b.dataset.meal }); }); touch(cursor); render(); }
+  if (a === "pasteflat" && clip) { const x = day(cursor); clip.items.forEach(e => { const { t, ...rest } = e; x.foods.push({ ...rest, id: uid(), ...(clip.type === "day" ? (t ? { t } : {}) : entryTime(cursor)) }); }); touch(cursor); render(); }
   if (a === "pasteday" && clip) { const x = day(cursor); clip.items.forEach(e => x.foods.push({ ...e, id: uid() })); touch(cursor); render(); }
   if (a === "ringadd") { const f = M.recipeFound[+b.dataset.i]; M.recipe.items.push({ food: f, qty: 1 }); M.recipe.q = ""; renderDlg(); $("#rq")?.focus(); }
   if (a === "ringdel") { M.recipe.items.splice(+b.dataset.i, 1); renderDlg(); }
@@ -936,6 +936,8 @@ document.addEventListener("submit", ev => {
 
 /* Entry times */
 const pad2 = n => String(n).padStart(2, "0");
+// Only foods logged for today get the current time. Back-filled days have no real time to record.
+const entryTime = date => date === today() ? { t: clockNow() } : {};
 function clockNow() { const d = new Date(); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
 function clockLabel(t) { const [h, m] = t.split(":").map(Number); return new Date(2000, 0, 1, h, m).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }); }
 const entryMs = (date, t) => { const [h, m] = t.split(":").map(Number), d = parse(date); d.setHours(h, m, 0, 0); return d.getTime(); };
