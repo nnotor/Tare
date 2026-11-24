@@ -195,6 +195,14 @@ input::placeholder { color: var(--faint); }
 .tbl tr:last-child th, .tbl tr:last-child td { border-bottom: 0; }
 .photogrid img { border-radius: var(--radius-sm); }
 
+.dbamount { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 8px; }
+.dbamount label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; font-weight: 600; min-width: 0; }
+.chooser.dbchoice { grid-template-columns: minmax(0, 1fr) auto; margin-top: 8px; }
+.chooser.dbchoice .btn { grid-column: auto; }
+.dlgbody { grid-auto-rows: max-content; }
+#res { min-height: 190px; max-height: min(360px, 46dvh); }
+#chooser:has(details[open]) { position: static; }
+
 /* Undo bar */
 #toast {
   position: fixed; z-index: 7; left: max(12px, var(--safe-left)); right: max(12px, var(--safe-right)); bottom: calc(74px + var(--safe-bottom));

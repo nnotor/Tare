@@ -1,5 +1,5 @@
 /* Tare feature module: coaching programs, recipes, label scanning, tracking, and insights. */
-window.TARE_FEATURES_BUILD = "10";
+window.TARE_FEATURES_BUILD = "11";
 // A page from an older release cannot safely run this code, so reload it into the matching version.
 if (window.TARE_BUILD !== window.TARE_FEATURES_BUILD && !window.repairTareBuild) {
   try {
@@ -34,8 +34,7 @@ const OCR = {
   core: "https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.0",
   lang: "https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng@1.0.0/4.0.0_best_int"
 };
-const onlineCache = new Map();
-let onlineNext = 0, clip = null, insightRange = 30, contributor = "kcal", ocrLoad = null, photoUrls = [], confirmPhoto = "";
+let clip = null, insightRange = 30, contributor = "kcal", ocrLoad = null, photoUrls = [], confirmPhoto = "";
 
 /* Safe backup restore */
 const oneOf = (value, allowed, fallback) => allowed.includes(value) ? value : fallback;
@@ -91,7 +90,7 @@ function restoreBackup(x) {
   render();
 }
 function clearSessionData() {
-  clearUndo(); clip = null; editing = null; servState = null; onlineCache.clear(); productCache.clear(); onlineNext = 0; confirmPhoto = "";
+  clearUndo(); clip = null; editing = null; servState = null; productCache.clear(); confirmPhoto = "";
   photoUrls.forEach(u => URL.revokeObjectURL(u)); photoUrls = [];
   if (!$("#dlg")?.open) M = null;
 }
@@ -264,12 +263,16 @@ function rankFoods(query) {
   const whole = query.trim().toLowerCase(), words = searchTokens(whole);
   if (!words.length) return [];
   const usual = smartFoods(M.meal, 60), boost = new Map(usual.map((f, i) => [f.name, 26 - Math.min(i, 20)])), seen = new Set(), ranked = [];
-  for (const food of [...S.custom, ...usual, ...FOODS]) {
+  for (const food of [...S.custom, ...usual.filter(f => !foodDbNames.has(f.name)), ...FOODS]) {
     const plain = `n:${food.name}|${food.serv}`, key = food.barcode ? `b:${food.barcode}` : plain;
     if (seen.has(key)) continue;
     seen.add(key); seen.add(plain);
     const base = scoreFood(food.name, words, whole);
     if (base != null) ranked.push({ food, score: base + (boost.get(food.name) || 0) + (S.custom.includes(food) ? 8 : 0) });
+  }
+  for (const { entry, score } of searchFoodDb(words, whole)) {
+    const food = dbFood(entry), key = `n:${food.name}|${food.serv}`;
+    if (!seen.has(key)) { seen.add(key); ranked.push({ food, score: score + (boost.get(food.name) || 0) }); }
   }
   return ranked.sort((a, b) => b.score - a.score || a.food.name.localeCompare(b.food.name)).slice(0, 30).map(x => x.food);
 }
@@ -302,75 +305,83 @@ function smartFoods(meal, limit = 10) {
   }
   return [...score.values()].sort((a, b) => b.s - a.s).slice(0, limit).map(x => x.f);
 }
-/* Online search through USDA FoodData Central, which allows requests from web apps. */
-const USDA_SEARCH = "https://api.nal.usda.gov/fdc/v1/foods/search";
-const USDA_MICROS = { fiber: [[1079], "G"], sugar: [[2000, 1063], "G"], satfat: [[1258], "G"], sodium: [[1093], "MG"], chol: [[1253], "MG"], potassium: [[1092], "MG"], calcium: [[1087], "MG"], iron: [[1089], "MG"], vitc: [[1162], "MG"], vitd: [[1114], "UG"] };
-const ONLINE_NOTE = "Results from USDA FoodData Central. Compare branded foods with the label.";
-function titleFood(text) {
-  const s = String(text || "").trim();
-  return s && s === s.toUpperCase() ? s.toLowerCase().replace(/(^|[\s(/-])([a-z])/g, (m, a, b) => a + b.toUpperCase()) : s;
+/* On-device USDA food database. Searches never leave the phone. */
+let foodDb = null, foodDbNames = new Map(), foodDbLoad = null, foodDbFailed = false;
+function dbFood(entry) {
+  if (entry.food) return entry.food;
+  const r = entry.row, n = {};
+  MICROS.forEach((m, i) => { const v = r[7 + i]; if (v != null) n[m.k] = v; });
+  return entry.food = { name: r[0], serv: "100 g", kcal: r[1], p: r[2], c: r[3], f: r[4], ...(Object.keys(n).length ? { n } : {}), db: true, portion: r[5] || "", portionGrams: r[6] || 0 };
 }
-function usdaFood(x) {
-  const nutrients = new Map((x.foodNutrients || []).map(n => [n.nutrientId, n]));
-  const value = (ids, unitName) => { for (const id of ids) { const n = nutrients.get(id); if (n && n.value != null && Number.isFinite(Number(n.value)) && String(n.unitName).toUpperCase() === unitName) return Number(n.value); } return null; };
-  const kcal = value([1008, 2047, 2048], "KCAL"), p = value([1003], "G"), c = value([1005], "G"), f = value([1004], "G");
-  if ([kcal, p, c, f].some(v => v == null || v < 0)) return null;
-  const est = p * 4 + c * 4 + f * 9;
-  if (kcal > 902 || (Math.max(kcal, est) >= 40 && Math.abs(est - kcal) / Math.max(kcal, est) > .35)) return null;
-  const rawUnit = String(x.servingSizeUnit || "").toLowerCase(), amount = Number(x.servingSize), sized = amount > 0 && ["g", "grm", "ml", "mlt"].includes(rawUnit), servingUnit = rawUnit.startsWith("m") ? "ml" : "g", factor = sized ? amount / 100 : 1;
-  const house = String(x.householdServingFullText || "").trim(), plainAmount = `${+amount.toFixed(1)} ${servingUnit}`;
-  const serv = !sized ? "100 g" : house && !/^[\d.]+\s*(g|grm|ml|mlt)$/i.test(house) ? `${titleFood(house)} (${plainAmount})`.slice(0, 50) : plainAmount;
-  const desc = titleFood(x.description), brand = x.dataType === "Branded" ? titleFood(x.brandName || x.brandOwner) : "";
-  if (!desc) return null;
-  const name = (brand && !desc.toLowerCase().includes(brand.toLowerCase()) ? `${brand} ${desc}` : desc).slice(0, 90), micros = {};
-  for (const [key, [ids, unitName]] of Object.entries(USDA_MICROS)) { const v = value(ids, unitName); if (v != null && v >= 0) micros[key] = +(v * factor).toFixed(2); }
-  return { name, serv, kcal: Math.round(kcal * factor), p: +(p * factor).toFixed(1), c: +(c * factor).toFixed(1), f: +(f * factor).toFixed(1), ...(Object.keys(micros).length ? { n: micros } : {}), online: true, generic: x.dataType !== "Branded" };
+function foodDbMessage() {
+  if (foodDb) return `${fmt(foodDb.length)} USDA foods are saved on this phone.`;
+  return foodDbFailed ? "The food database is not saved yet. Connect once, then reopen Tare." : "Loading the food database.";
 }
-function rankOnline(list, query) {
-  const whole = query.toLowerCase(), words = searchTokens(whole), score = f => (scoreFood(f.name, words, whole) ?? -60) + (f.generic ? 8 : 0) + (/\braw\b/i.test(f.name) ? 10 : 0);
-  const seen = new Set();
-  return list.map(food => ({ food, s: score(food) })).sort((a, b) => b.s - a.s).map(x => x.food).filter(f => { const key = `${f.name}|${f.serv}`.toLowerCase(); if (seen.has(key)) return false; seen.add(key); return true; }).slice(0, 15);
+function refreshFoodSearch() {
+  const status = $("#foodDbStatus"), results = $("#res");
+  if (status) status.textContent = foodDbMessage();
+  if (results && M?.tab === "search") results.innerHTML = resultsHTML();
 }
-async function onlineFailureMessage(error) {
-  if (error?.name === "AbortError") return "USDA took too long to respond. Try again.";
-  try {
-    await fetch("https://api.nal.usda.gov/", { mode: "no-cors", credentials: "omit", cache: "no-store", referrerPolicy: "no-referrer" });
-    return "USDA is reachable but did not accept this search. Its shared limit may be full, so try again later.";
-  } catch (e) {
-    return "Tare could not reach USDA. Check your connection. A VPN or content blocker can also block it.";
+function loadFoodDb() {
+  if (foodDb) return Promise.resolve(foodDb);
+  return foodDbLoad || (foodDbLoad = fetch("foods.json").then(r => { if (!r.ok) throw new Error("food database"); return r.json(); }).then(data => {
+    if (!Array.isArray(data.foods)) throw new Error("food database");
+    foodDb = data.foods.map(row => ({ row, lower: String(row[0]).toLowerCase(), tokens: searchTokens(row[0]), food: null }));
+    foodDbNames = new Map(foodDb.map(e => [e.row[0], e]));
+    foodDbFailed = false;
+    refreshFoodSearch();
+    return foodDb;
+  }).catch(e => { foodDbLoad = null; foodDbFailed = true; refreshFoodSearch(); throw e; }));
+}
+// Everyday versions of foods appear before less common USDA variations.
+const COMMON_DB_FOODS = new Set(["rice, white, long-grain, regular, enriched, cooked", "rice, brown, long-grain, cooked (includes foods for usda's food distribution program)", "egg, whole, raw, fresh", "egg, whole, cooked, hard-boiled", "chicken, broilers or fryers, breast, meat only, cooked, roasted", "fish, salmon, atlantic, farmed, cooked, dry heat", "sweet potato, cooked, baked in skin, flesh, without salt", "potatoes, baked, flesh and skin, without salt", "milk, whole, 3.25% milkfat, with added vitamin d", "milk, reduced fat, fluid, 2% milkfat, with added vitamin a and vitamin d", "oil, olive, salad or cooking", "butter, salted", "bread, white, commercially prepared (includes soft bread crumbs)", "bread, whole-wheat, commercially prepared", "pasta, cooked, enriched, without added salt", "beef, ground, 90% lean meat / 10% fat, patty, cooked, broiled", "beef, ground, 80% lean meat / 20% fat, patty, cooked, broiled", "apples, gala, with skin, raw", "oranges, raw, all commercial varieties", "avocados, raw, all commercial varieties", "broccoli, cooked, boiled, drained, without salt", "spinach, raw", "tomatoes, red, ripe, raw, year round average", "peanut butter, smooth style, without salt", "yogurt, greek, plain, nonfat", "bananas, raw"]);
+function quickFoodScore(entry, words, whole) {
+  let score = entry.lower.startsWith(whole) ? 100 : 0;
+  if (COMMON_DB_FOODS.has(entry.lower)) score += 130;
+  for (const word of words) {
+    if (entry.tokens.includes(word)) score += 15;
+    if (entry.tokens[0]?.startsWith(word)) score += 45;
+    else if (entry.tokens.some(t => t.startsWith(word))) score += 30;
+    else if (entry.lower.includes(word)) score += 12;
+    else return null;
   }
+  return score;
 }
-async function searchOnline() {
-  const q = M.q.trim();
-  if (q.length < 2) { M.onlineMsg = "Type at least 2 letters first."; refreshResults(); return; }
-  const cacheKey = q.toLowerCase();
-  if (onlineCache.has(cacheKey)) { M.online = onlineCache.get(cacheKey); M.onlineMsg = M.online.length ? ONLINE_NOTE : "No online results found."; refreshResults(); return; }
-  if (navigator.onLine === false) { M.onlineMsg = "You are offline. Built-in and saved foods still work."; refreshResults(); return; }
-  const wait = Math.ceil((onlineNext - Date.now()) / 1000);
-  if (wait > 0) { M.onlineMsg = wait > 60 ? `The free USDA search limit was reached. Try again in about ${Math.ceil(wait / 60)} minutes.` : `Try online search again in ${wait} seconds.`; refreshResults(); return; }
-  onlineNext = Date.now() + 2000;
-  M.onlineBusy = true; M.onlineMsg = "Searching USDA FoodData Central."; refreshResults();
-  const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 12000), asked = q;
-  try {
-    const params = new URLSearchParams({ api_key: "DEMO_KEY", query: q.slice(0, 80), pageSize: "40", dataType: "Foundation,SR Legacy,Branded" });
-    const r = await fetch(`${USDA_SEARCH}?${params}`, { signal: ctl.signal, credentials: "omit", referrerPolicy: "no-referrer" });
-    if (r.status === 429) { const e = new Error("limit"); e.limit = true; throw e; }
-    if (!r.ok) throw new Error("search");
-    const j = await r.json();
-    const list = rankOnline((j.foods || []).map(usdaFood).filter(Boolean), q);
-    onlineCache.set(cacheKey, list);
-    if (!M || M.q.trim() !== asked) return;
-    M.online = list;
-    M.onlineMsg = list.length ? ONLINE_NOTE : "No online results found.";
-  } catch (e) {
-    onlineNext = Date.now() + (e.limit ? 1800000 : 10000);
-    const message = e.limit ? "The free USDA search limit was reached. Try again later. Built-in foods and barcode scanning still work." : await onlineFailureMessage(e);
-    if (M) M.onlineMsg = message;
-  } finally { clearTimeout(timer); if (M) { M.onlineBusy = false; refreshResults(); } }
+function adjustFoodScore(entry, score) {
+  const commas = (entry.lower.match(/,/g) || []).length;
+  return score - Math.min(entry.lower.length, 60) / 10 - commas * 1.2 + (/\braw\b/.test(entry.lower) ? 6 : 0) - (/\b(restaurant|fast foods?)\b/.test(entry.lower) ? 8 : 0);
 }
-function refreshResults() { const r = $("#res"), m = $("#onlineMsg"), b = $("#onlineBtn"); if (r) r.innerHTML = resultsHTML(); if (m) { m.textContent = M.onlineMsg || ""; m.hidden = !M.onlineMsg; } if (b) b.disabled = !!M.onlineBusy; }
+function searchFoodDb(words, whole) {
+  if (!foodDb) return [];
+  let found = [];
+  for (const entry of foodDb) { const score = quickFoodScore(entry, words, whole); if (score != null) found.push({ entry, score: adjustFoodScore(entry, score) }); }
+  if (found.length < 6 && words.some(w => w.length >= 4)) {
+    const have = new Set(found.map(x => x.entry));
+    for (const entry of foodDb) { if (have.has(entry)) continue; const score = scoreFood(entry.row[0], words, whole); if (score != null) found.push({ entry, score: adjustFoodScore(entry, score) - 10 }); }
+  }
+  return found.sort((a, b) => b.score - a.score).slice(0, 40);
+}
+function dbChooserHTML(f) {
+  return `<div class="dbamount"><label>Amount<input id="qty" type="number" inputmode="decimal" min="0.01" step="any" value="100"></label><label>Unit<select id="qtyUnit"><option value="g">grams</option><option value="oz">ounces</option>${f.portion && f.portionGrams ? `<option value="portion">${esc(f.portion)} (${f.portionGrams} g)</option>` : ""}</select></label></div><div class="chooser dbchoice"><span><b>${esc(f.name)}</b><br><span class="muted mono" id="qtyInfo"></span></span><button class="btn primary" data-act="addsel">Add</button></div><div id="microInfo"></div>`;
+}
+function dbGrams() {
+  const amount = num($("#qty")?.value), unitName = $("#qtyUnit")?.value;
+  return unitName === "oz" ? amount * SERVING_UNITS.oz : unitName === "portion" ? amount * M.sel.portionGrams : amount;
+}
+function updateDbAmount() {
+  const f = M.sel, factor = Math.max(0, dbGrams()) / 100, el = $("#qtyInfo");
+  if (el) el.textContent = `${fmt(f.kcal * factor)} kcal · ${Math.round(f.p * factor)}P ${Math.round(f.c * factor)}C ${Math.round(f.f * factor)}F`;
+  setMicroPanel("#microInfo", f.n, factor);
+}
+function addDbFood() {
+  const f = M.sel, grams = dbGrams(), amount = num($("#qty").value), unitName = $("#qtyUnit").value;
+  if (!(grams > 0)) return false;
+  const factor = grams / 100, shown = +amount.toFixed(2), serv = unitName === "portion" ? `${shown} × ${f.portion} (${+grams.toFixed(1)} g)` : `${shown} ${unitName}`;
+  addEntry({ name: f.name, serv, kcal: f.kcal * factor, p: f.p * factor, c: f.c * factor, f: f.f * factor, ...(f.n ? { n: scaleN(f.n, factor) } : {}) }, 1);
+  return true;
+}
 function searchTools() {
-  return `<div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn small" id="onlineBtn" data-pro="online" ${M.onlineBusy ? "disabled" : ""}>Search online</button></div><p class="muted" id="onlineMsg" role="status" style="margin:0;font-size:13px" ${M.onlineMsg ? "" : "hidden"}>${esc(M.onlineMsg || "")}</p>`;
+  return `<p class="muted" id="foodDbStatus" role="status" style="margin:0;font-size:13px">${esc(foodDbMessage())}</p>`;
 }
 
 /* Nutrition label scanner */
@@ -816,7 +827,6 @@ function insightsView() {
 document.addEventListener("click", ev => {
   const b = ev.target.closest("[data-pro]"); if (!b) return;
   const a = b.dataset.pro;
-  if (a === "online") searchOnline();
   if (a === "irange") { insightRange = b.dataset.r === "all" ? "all" : +b.dataset.r; render(); }
   if (a === "goday" && b.dataset.d <= today()) { cursor = b.dataset.d; render(); }
   if (a === "microtoggle") { microsExpanded = !microsExpanded; render(); }
@@ -843,7 +853,6 @@ document.addEventListener("click", ev => {
 });
 document.addEventListener("input", ev => {
   const t = ev.target;
-  if (t.id === "q" && M) { M.online = null; M.onlineMsg = ""; refreshResults(); }
   if (t.id === "kg") t.dataset.edited = "1";
   if (t.id === "servAmt") applyServingAmount();
   if (t.dataset.servMacro && servState) readServingBase();
@@ -866,6 +875,7 @@ document.addEventListener("keydown", ev => {
 });
 document.addEventListener("change", ev => {
   const t = ev.target;
+  if (t.id === "qtyUnit") { $("#qty").value = t.value === "g" ? 100 : t.value === "oz" ? 3.5 : 1; updateDbAmount(); }
   if (t.id === "servUnit") { changeServingUnit(t); refreshFormMicros(); }
   if (t.id === "hideMeals") { S.profile.hideMeals = t.checked; touch(); }
   if (t.id === "coachSwitch") syncCoachFields();

@@ -1,6 +1,6 @@
-const CACHE = "tare-v10";
+const CACHE = "tare-v11";
 const SCANNER = "https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js";
-const SHELL = ["./index.html", "./features.js", "./theme.css", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
+const SHELL = ["./index.html", "./features.js", "./theme.css", "./foods.json", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png"];
 const INDEX = new URL("./index.html", self.location.href).href;
 
 // Save a fresh copy, leaving the existing one in place if the network fails.
