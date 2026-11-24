@@ -4,6 +4,8 @@
 
 Tare tracks calories and macros, scans packaged foods, estimates your actual energy expenditure, and updates your targets every week. It runs as an installable web app, works offline, and keeps your log on your device.
 
+Everything is free. There are no subscriptions, paywalls, or accounts.
+
 **[Open Tare](https://nnotor.github.io/Tare/)**
 
 ## Features
@@ -31,7 +33,9 @@ Tare tracks calories and macros, scans packaged foods, estimates your actual ene
 - Get typo-tolerant autocomplete and smart suggestions based on what you usually eat at each meal
 - Build recipes, add custom foods, and remember corrected barcode values
 - Change a serving in g, ml, or oz and automatically rescale its nutrition
-- Edit past entries, including their amount, nutrition, meal, and date
+- See a small icon for each food, such as grain for oats or a milk carton for whey protein
+- Record the time of each food automatically, and change it when you log something later
+- Edit past entries, including their amount, nutrition, meal, date, and time
 - Undo accidental food deletions
 - Log by meal or use one simple food list
 - Copy and paste foods, meals, or entire days
@@ -46,6 +50,15 @@ Tare tracks calories and macros, scans packaged foods, estimates your actual ene
 - Compare 7-day, 30-day, and all-time nutrition averages
 - See top food contributors and calorie timing by meal
 - Review micronutrients on the Log screen and while adding foods, when food data includes them
+- Find foods high in protein, fiber, potassium, calcium, iron, vitamin C, or vitamin D, ranked per calorie or per 100 g, and log one with a tap
+
+### Fasting timer
+
+- Start a fast now, or backdate it to your last logged food
+- Watch elapsed time and progress toward a 12 to 36 hour goal
+- Adjust the start time if you forgot to start the timer
+- Review your recent fasts on the Log screen
+- Hide the timer from Log if you do not fast
 
 ### Body tracking
 
@@ -74,6 +87,11 @@ Home-screen apps use Safari's camera permission. If scanning is blocked, go to *
 1. Open [Tare](https://nnotor.github.io/Tare/) in Chrome.
 2. Open the **⋮** menu and choose **Add to Home screen** or **Install app**.
 3. Open Tare from the new icon and set up your plan there.
+
+## Your data
+
+- Save a full backup file and restore it on any device
+- Export spreadsheets (CSV) of your food log, daily totals, and fasts. They open in Excel, Numbers, and Google Sheets.
 
 ## Privacy
 

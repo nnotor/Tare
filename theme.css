@@ -250,3 +250,26 @@ dialog::backdrop { background: rgba(0, 0, 0, .68); }
   .ringfill { transition: stroke-dashoffset .45s cubic-bezier(.2, .8, .2, 1); }
   .btn, .iconbtn, .daychip, .entrymain { transition: transform .12s ease; }
 }
+
+/* Food icons */
+.fooditem { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.fooditem > span:last-child { min-width: 0; }
+.foodicon { display: inline-grid; place-items: center; flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--raised); color: var(--muted); }
+.foodicon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.result[aria-selected="true"] .foodicon { background: var(--panel); }
+
+/* Fasting timer */
+.fastcard { display: grid; gap: 10px; padding: 14px 16px; }
+.fastcard h3 { margin: 0; font: 700 17px/1.2 var(--display); letter-spacing: -.02em; }
+.fasttime { display: flex; align-items: baseline; gap: 8px; }
+.fasttime b { font: 750 28px/1.1 var(--display); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.fastrow { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
+.fastrow:empty { display: none; }
+.fastrow label { display: grid; gap: 3px; font-size: 13px; font-weight: 650; flex: 1 1 190px; min-width: 0; }
+.fastlog { display: grid; border-top: 1px solid var(--line); }
+.fastlog > div { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 13px; }
+.fastlog > div span:first-child { font-weight: 700; font-variant-numeric: tabular-nums; }
+.fastlog .iconbtn { width: 32px; height: 32px; }
+
+/* Foods high in a nutrient */
+.richrow { width: 100%; align-items: center; }
