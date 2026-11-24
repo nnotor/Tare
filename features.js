@@ -1,5 +1,5 @@
 /* Tare feature module: coaching programs, recipes, label scanning, tracking, and insights. */
-window.TARE_FEATURES_BUILD = "11";
+window.TARE_FEATURES_BUILD = "12";
 // A page from an older release cannot safely run this code, so reload it into the matching version.
 if (window.TARE_BUILD !== window.TARE_FEATURES_BUILD && !window.repairTareBuild) {
   try {
@@ -40,6 +40,7 @@ let clip = null, insightRange = 30, contributor = "kcal", ocrLoad = null, photoU
 const oneOf = (value, allowed, fallback) => allowed.includes(value) ? value : fallback;
 const isDateKey = v => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
 const safeNumber = (v, min, max, fallback = 0) => { const n = Number(v); return Number.isFinite(n) ? clamp(n, min, max) : fallback; };
+const isClock = v => typeof v === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 const safeWeek = w => Array.isArray(w) && w.length === 7 ? w.map(x => oneOf(x, Object.keys(DAY_TYPES), "normal")) : undefined;
 function cleanPlan(plan) {
   const x = plan && typeof plan === "object" ? plan : {};
@@ -61,6 +62,8 @@ function cleanProfile(raw) {
   if (x.manual) { const { setOn, floored, ...manual } = cleanPlan(x.manual); out.manual = manual; }
   const week = safeWeek(x.week); if (week) out.week = week;
   if (isDateKey(x.lastBackup)) out.lastBackup = x.lastBackup;
+  if (x.hideFasting === true) out.hideFasting = true;
+  const fasting = cleanFasting(x.fasting); if (fasting) out.fasting = fasting;
   if (Array.isArray(x.planHistory)) out.planHistory = x.planHistory.filter(h => h && (h.from === "0000-00-00" || isDateKey(h.from))).slice(-400).map(h => { const { kcal, p, c, f } = cleanPlan(h); return { from: h.from, kcal, p, c, f, week: safeWeek(h.week) || null }; });
   return out;
 }
@@ -73,7 +76,7 @@ function cleanCustom(list) {
 }
 function cleanEntry(e) {
   const n = cleanN(e && e.n);
-  return { id: uid(), name: String(e?.name ?? "Food").slice(0, 100), serv: String(e?.serv || "1 serving").slice(0, 50), qty: safeNumber(e?.qty, .01, 1000, 1), meal: MEALS.includes(e?.meal) ? e.meal : "Snacks", kcal: safeNumber(e?.kcal, 0, 50000), p: safeNumber(e?.p, 0, 5000), c: safeNumber(e?.c, 0, 5000), f: safeNumber(e?.f, 0, 5000), ...(n ? { n } : {}) };
+  return { id: uid(), ...(isClock(e?.t) ? { t: e.t } : {}), name: String(e?.name ?? "Food").slice(0, 100), serv: String(e?.serv || "1 serving").slice(0, 50), qty: safeNumber(e?.qty, .01, 1000, 1), meal: MEALS.includes(e?.meal) ? e.meal : "Snacks", kcal: safeNumber(e?.kcal, 0, 50000), p: safeNumber(e?.p, 0, 5000), c: safeNumber(e?.c, 0, 5000), f: safeNumber(e?.f, 0, 5000), ...(n ? { n } : {}) };
 }
 function restoreBackup(x) {
   if (!x || typeof x !== "object" || !x.profile?.plan || !x.days || typeof x.days !== "object" || Array.isArray(x.days)) throw new Error("backup");
@@ -624,7 +627,7 @@ function macroColumn(name, value, goal, color) {
 const mealsOff = () => S.profile?.hideMeals === true;
 function mealForNow() { const h = new Date().getHours(); return h < 11 ? "Breakfast" : h < 16 ? "Lunch" : h < 21 ? "Dinner" : "Snacks"; }
 function entryRow(e) {
-  return `<div class="entry"><button class="entrymain" data-pro="editentry" data-id="${esc(e.id)}" aria-label="Edit ${esc(e.name)}"><b>${esc(e.name)}</b><small>${e.qty !== 1 ? esc(e.qty) + " × " : ""}${esc(e.serv)} · ${Math.round(e.p)}P ${Math.round(e.c)}C ${Math.round(e.f)}F</small></button><span class="entrykcal">${fmt(e.kcal)}</span><button class="iconbtn quiet" data-pro="copyentry" data-id="${esc(e.id)}" aria-label="Copy ${esc(e.name)}">${ICONS.copy}</button><button class="iconbtn quiet" data-act="remove" data-id="${esc(e.id)}" aria-label="Remove ${esc(e.name)}">${ICONS.close}</button></div>`;
+  return `<div class="entry"><button class="entrymain" data-pro="editentry" data-id="${esc(e.id)}" aria-label="Edit ${esc(e.name)}"><span class="fooditem">${foodIcon(e.name)}<span><b>${esc(e.name)}</b><small>${e.t ? esc(clockLabel(e.t)) + " · " : ""}${e.qty !== 1 ? esc(e.qty) + " × " : ""}${esc(e.serv)} · ${Math.round(e.p)}P ${Math.round(e.c)}C ${Math.round(e.f)}F</small></span></span></button><span class="entrykcal">${fmt(e.kcal)}</span><button class="iconbtn quiet" data-pro="copyentry" data-id="${esc(e.id)}" aria-label="Copy ${esc(e.name)}">${ICONS.copy}</button><button class="iconbtn quiet" data-act="remove" data-id="${esc(e.id)}" aria-label="Remove ${esc(e.name)}">${ICONS.close}</button></div>`;
 }
 function flatFoodCard(x) {
   const foods = x.foods, sum = k => foods.reduce((a, e) => a + e[k], 0), meal = mealForNow();
@@ -632,7 +635,7 @@ function flatFoodCard(x) {
   return `<section class="card mealcard"><div class="mealtitle"><div><h3>Food</h3><p>${foods.length ? `${fmt(sum("kcal"))} kcal · ${Math.round(sum("p"))}P ${Math.round(sum("c"))}C ${Math.round(sum("f"))}F` : "Nothing logged"}</p></div><div class="mealactions"><button class="iconbtn soft" data-act="add" data-meal="${meal}" data-tab="scan" aria-label="Scan food">${ICONS.scan}</button><button class="iconbtn add" data-act="add" data-meal="${meal}" aria-label="Add food">${ICONS.plus}</button></div></div>${foods.map(entryRow).join("")}${paste}</section>`;
 }
 function logLayoutCard() {
-  return `<section class="card stack"><h2>Log layout</h2><label style="display:flex;align-items:center;gap:10px"><input id="hideMeals" type="checkbox" ${mealsOff() ? "checked" : ""}>Use one food list instead of meals</label><p class="muted" style="margin:0;font-size:13px">Breakfast, Lunch, Dinner, and Snacks will be hidden. Turn this off anytime to bring them back with your foods still sorted.</p></section>`;
+  return `<section class="card stack"><h2>Log layout</h2><label style="display:flex;align-items:center;gap:10px"><input id="hideMeals" type="checkbox" ${mealsOff() ? "checked" : ""}>Use one food list instead of meals</label><p class="muted" style="margin:0;font-size:13px">Breakfast, Lunch, Dinner, and Snacks will be hidden. Turn this off anytime to bring them back with your foods still sorted.</p><label style="display:flex;align-items:center;gap:10px"><input id="showFasting" type="checkbox" ${fastingOn() ? "checked" : ""}>Show the fasting timer on Log</label></section>`;
 }
 function logView() {
   const t = totals(cursor), g = dayPlan(cursor), left = g.kcal - t.kcal, x = peek(cursor), canCopy = !x.foods.length && peek(add(cursor, -1)).foods.length;
@@ -647,7 +650,7 @@ function logView() {
     ${g.kcal ? `<div class="calstats"><div><b>${fmt(t.kcal)}</b><span>Eaten</span></div><div><b>${fmt(g.kcal)}</b><span>${esc(dayLabel(cursor))}</span></div></div>` : ""}
     <div class="macros">${macroColumn("Protein", t.p, g.p, "--protein")}${macroColumn("Carbs", t.c, g.c, "--carbs")}${macroColumn("Fat", t.f, g.f, "--fat")}</div>
   </section>
-  <section class="card weighcard"><form class="weigh" data-form="weight"><div><b>Weight</b><span>${hasWeight ? `Trend ${toUser(latestTrend(cursor)).toFixed(1)} ${unit()}` : `Log in ${unit()}`}</span></div><input id="w" name="w" type="number" inputmode="decimal" step="0.1" min="20" max="1000" aria-label="Weight in ${unit()}" value="${x.w ? toUser(x.w).toFixed(1) : ""}" placeholder="0.0"><button class="btn small">Save</button></form></section>${microsCard(x)}</div>
+  <section class="card weighcard"><form class="weigh" data-form="weight"><div><b>Weight</b><span>${hasWeight ? `Trend ${toUser(latestTrend(cursor)).toFixed(1)} ${unit()}` : `Log in ${unit()}`}</span></div><input id="w" name="w" type="number" inputmode="decimal" step="0.1" min="20" max="1000" aria-label="Weight in ${unit()}" value="${x.w ? toUser(x.w).toFixed(1) : ""}" placeholder="0.0"><button class="btn small">Save</button></form></section>${fastingOn() ? fastCard() : ""}${microsCard(x)}</div>
   <div class="dash-log">${tools ? `<div class="daytools">${tools}</div>` : ""}
   ${mealsOff() ? flatFoodCard(x) : MEALS.map(m => {
     const es = x.foods.filter(e => e.meal === m), sum = k => es.reduce((a, e) => a + e[k], 0);
@@ -668,7 +671,8 @@ function openEdit(id) {
   $("#dlg").innerHTML = `<div class="dlgwrap"><div class="dlghead"><div class="mealhead"><h2>Edit food</h2><button class="icon" data-act="close" aria-label="Close">×</button></div></div><div class="dlgbody"><form class="form" data-form="editentry">
   <label class="full">Name<input id="ename" name="name" required maxlength="100" value="${esc(e.name)}"></label>
   <label ${mealsOff() ? "hidden" : ""}>Meal<select id="emeal" name="meal">${MEALS.map(m => opt(m, m, e.meal)).join("")}</select></label>
-  <label class="${mealsOff() ? "full" : ""}">Date<input id="edate" name="date" type="date" required max="${today()}" value="${esc(cursor)}"></label>
+  <label>Date<input id="edate" name="date" type="date" required max="${today()}" value="${esc(cursor)}"></label>
+  <label class="${mealsOff() ? "" : "full"}">Time<input id="etime" name="time" type="time" value="${esc(e.t || "")}"></label>
   <label>Serving<input id="cserv" name="serv" required maxlength="50" value="${esc(e.serv)}"></label>
   <label>Servings eaten<input id="eqty" name="qty" type="number" min="0.01" step="any" inputmode="decimal" required value="${q}"></label>
   <label>Calories per serving<input id="ck" name="kcal" type="number" min="0" step="any" inputmode="decimal" required value="${per(e.kcal)}"></label>
@@ -694,6 +698,7 @@ function saveEdit(d) {
   if (!(qty > 0) || !name) return fail("Enter a name and a serving count.");
   const e = from.foods[index], perN = scaledMicros(editing.perN), next = { ...e, name: name.slice(0, 100), serv: String(d.get("serv")).trim().slice(0, 50), qty, meal: MEALS.includes(d.get("meal")) ? d.get("meal") : e.meal, kcal: Math.round(num(d.get("kcal")) * qty), p: +(num(d.get("p")) * qty).toFixed(1), c: +(num(d.get("c")) * qty).toFixed(1), f: +(num(d.get("f")) * qty).toFixed(1) };
   if (perN) next.n = scaleN(perN, qty); else delete next.n;
+  const time = String(d.get("time") || ""); if (isClock(time)) next.t = time; else delete next.t;
   if (date === editing.date) from.foods[index] = next;
   else { from.foods.splice(index, 1); day(date).foods.push(next); }
   touch(date);
@@ -820,6 +825,7 @@ function insightsView() {
   <section class="card stack"><h2>Nutrition averages</h2><div style="overflow-x:auto"><table class="tbl"><thead><tr><th></th><th>kcal</th><th>P</th><th>C</th><th>F</th></tr></thead><tbody>${ave.map(([l, a]) => `<tr><th>${l}</th>${a ? `<td>${fmt(a.kcal)}</td><td>${Math.round(a.p)}</td><td>${Math.round(a.c)}</td><td>${Math.round(a.f)}</td>` : `<td colspan="4" class="muted">No logged days</td>`}</tr>`).join("")}</tbody></table></div></section>
   ${mealsOff() ? "" : `<section class="card stack"><h2>Nutrient timing</h2>${MEALS.map((m, i) => { const pct = mealK[i] / allK * 100; return `<div><div class="mealhead"><span>${m}</span><span class="mono">${Math.round(pct)}%</span></div><div class="bar"><i style="width:${pct}%;background:var(--accent)"></i></div></div>`; }).join("")}</section>`}
   <section class="card stack"><div class="mealhead"><h2>Top contributors</h2><select id="contrib" aria-label="Nutrient" style="width:auto;max-width:55%">${keys.map(k => opt(k[0], k[1], contributor)).join("")}</select></div>${top.length ? top.map(t => `<div><div class="mealhead"><span style="min-width:0;overflow-wrap:anywhere">${esc(t.name)}</span><span class="mono">${Math.round(t.pct)}%</span></div><div class="bar"><i style="width:${t.pct}%;background:var(--protein)"></i></div></div>`).join("") : `<p class="muted" style="margin:0">No logged foods have this nutrient yet.</p>`}</section></div>
+  ${richCard()}
   <section class="card stack"><h2>Micronutrients</h2><p class="muted" style="margin:0;font-size:13px">Daily average from foods with this data. Scanned products, labels, and recipes can include it. Most built-in foods do not, so true intake may be higher.</p><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Nutrient</th><th>Average</th><th>Daily value</th><th>Foods with data</th></tr></thead><tbody>${micro.map(m => `<tr><th>${m.label}</th><td>${m.count ? `${m.avg >= 10 ? Math.round(m.avg) : m.avg.toFixed(1)} ${m.u}` : "–"}</td><td>${m.count ? Math.round(m.avg / m.dv * 100) + "%" : "–"}</td><td>${m.count}</td></tr>`).join("")}</tbody></table></div></section>`;
 }
 
@@ -842,12 +848,20 @@ document.addEventListener("click", ev => {
   if (a === "copyentry") { const e = peek(cursor).foods.find(x => x.id === b.dataset.id); if (e) { clip = { type: "food", items: [copyItem(e)] }; setSave("Food copied"); render(); } }
   if (a === "copymeal") { clip = { type: "meal", items: peek(cursor).foods.filter(e => e.meal === b.dataset.meal).map(copyItem) }; setSave("Meal copied"); render(); }
   if (a === "copyday") { clip = { type: "day", items: peek(cursor).foods.map(copyItem) }; setSave("Day copied"); render(); }
-  if (a === "pastemeal" && clip) { const x = day(cursor); clip.items.forEach(e => x.foods.push({ ...e, id: uid(), meal: b.dataset.meal })); touch(cursor); render(); }
-  if (a === "pasteflat" && clip) { const x = day(cursor); clip.items.forEach(e => x.foods.push({ ...e, id: uid() })); touch(cursor); render(); }
+  if (a === "pastemeal" && clip) { const x = day(cursor); clip.items.forEach(e => x.foods.push({ ...e, id: uid(), t: clockNow(), meal: b.dataset.meal })); touch(cursor); render(); }
+  if (a === "pasteflat" && clip) { const x = day(cursor); clip.items.forEach(e => x.foods.push({ ...e, id: uid(), ...(clip.type === "day" ? {} : { t: clockNow() }) })); touch(cursor); render(); }
   if (a === "pasteday" && clip) { const x = day(cursor); clip.items.forEach(e => x.foods.push({ ...e, id: uid() })); touch(cursor); render(); }
   if (a === "ringadd") { const f = M.recipeFound[+b.dataset.i]; M.recipe.items.push({ food: f, qty: 1 }); M.recipe.q = ""; renderDlg(); $("#rq")?.focus(); }
   if (a === "ringdel") { M.recipe.items.splice(+b.dataset.i, 1); renderDlg(); }
   if (a === "rsave") saveRecipe(!!b.dataset.add);
+  if (a === "faststart") startFast(b.dataset.from === "meal");
+  if (a === "faststop") endFast();
+  if (a === "fastdel") { const f = S.profile.fasting; if (f?.log) { f.log = f.log.filter(x => String(x.s) !== b.dataset.s); touch(); render(); } }
+  if (a === "csvfoods") exportFoodsCsv();
+  if (a === "csvdays") exportDaysCsv();
+  if (a === "csvfasts") exportFastsCsv();
+  if (a === "richbasis") { richBasis = b.dataset.b; refreshRich(); }
+  if (a === "richadd") addRichFood(+b.dataset.i);
   if (a === "delphoto") { confirmPhoto = b.dataset.id; showPhotos(); }
   if (a === "delphotoyes") { const id = b.dataset.id; confirmPhoto = ""; photoTx("readwrite", s => s.delete(id)).then(showPhotos).catch(showPhotos); }
 });
@@ -882,6 +896,10 @@ document.addEventListener("change", ev => {
   if (t.id === "useTargets") { const row = $("#trackTargetRow"); row.hidden = !t.checked; row.querySelectorAll("input").forEach(i => { i.disabled = !t.checked; }); }
   if (t.id === "pmode") { const row = $("#manualRow"), manual = t.value === "manual"; $("#nudgeRow").hidden = t.value !== "collab"; row.hidden = !manual; row.querySelectorAll("input").forEach(i => { i.disabled = !manual; }); }
   if (t.id === "contrib") { contributor = t.value; render(); }
+  if (t.id === "richKey") { richKey = t.value; refreshRich(); }
+  if (t.id === "showFasting") { S.profile.hideFasting = !t.checked; if (t.checked) delete S.profile.hideFasting; touch(); }
+  if (t.id === "fastGoal") { fastingData().goal = oneOf(Number(t.value), FAST_GOALS, 16); touch(); refreshFastCard(); }
+  if (t.id === "fastStartAt") setFastStart(t.value);
   if (t.dataset.proChange === "period") { const x = day(cursor); if (t.checked) x.period = true; else delete x.period; touch(cursor); render(); }
   if (t.id === "labelPhoto" && t.files[0]) readLabel(t.files[0]);
   if (t.id === "progressPhoto" && t.files[0]) { addPhoto(t.files[0]); t.value = ""; }
@@ -915,3 +933,227 @@ document.addEventListener("submit", ev => {
     touch(cursor); render();
   }
 });
+
+/* Entry times */
+const pad2 = n => String(n).padStart(2, "0");
+function clockNow() { const d = new Date(); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
+function clockLabel(t) { const [h, m] = t.split(":").map(Number); return new Date(2000, 0, 1, h, m).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }); }
+const entryMs = (date, t) => { const [h, m] = t.split(":").map(Number), d = parse(date); d.setHours(h, m, 0, 0); return d.getTime(); };
+
+/* Fasting timer */
+const FAST_GOALS = [12, 13, 14, 16, 18, 20, 24, 36];
+const HOUR = 36e5;
+function cleanFasting(raw) {
+  if (!raw || typeof raw !== "object") return undefined;
+  const now = Date.now(), okTime = v => Number.isFinite(Number(v)) && Number(v) > 946684800000 && Number(v) <= now + 6e4;
+  const out = { goal: oneOf(Number(raw.goal), FAST_GOALS, 16) };
+  if (okTime(raw.start)) out.start = Number(raw.start);
+  if (Array.isArray(raw.log)) out.log = raw.log.filter(f => f && okTime(f.s) && okTime(f.e) && Number(f.e) > Number(f.s) && Number(f.e) - Number(f.s) < 14 * 24 * HOUR).slice(-300).map(f => ({ s: Number(f.s), e: Number(f.e) }));
+  return out;
+}
+const fastingOn = () => !!S.profile && S.profile.hideFasting !== true;
+function fastingData() { const p = S.profile; return p.fasting || (p.fasting = { goal: 16, log: [] }); }
+function duration(ms) { const mins = Math.max(0, Math.floor(ms / 6e4)), h = Math.floor(mins / 60), m = mins % 60; return h ? `${h}h ${pad2(m)}m` : `${m}m`; }
+function whenLabel(ms) { const d = new Date(ms), key = iso(d), time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }); return key === today() ? time : `${long(key)} ${time}`; }
+function localInput(ms) { const d = new Date(ms); return `${iso(d)}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
+// The most recent timed food that is not in the future marks the end of the last meal.
+function lastMealMs() {
+  const now = Date.now(); let best = 0;
+  for (const d of [today(), add(today(), -1), add(today(), -2)]) for (const e of peek(d).foods) if (e.t) { const ms = entryMs(d, e.t); if (ms <= now && ms > best) best = ms; }
+  return best || null;
+}
+function fastCard() {
+  const f = S.profile.fasting || { goal: 16, log: [] }, now = Date.now(), goal = f.goal || 16, recent = (f.log || []).slice(-3).reverse();
+  const goalSelect = `<select id="fastGoal" aria-label="Fasting goal" style="width:auto">${FAST_GOALS.map(h => opt(h, `${h} hour goal`, goal)).join("")}</select>`;
+  const history = recent.length ? `<div class="fastlog">${recent.map(x => `<div><span>${esc(duration(x.e - x.s))}</span><span class="muted">ended ${esc(whenLabel(x.e))}</span><button class="iconbtn quiet" data-pro="fastdel" data-s="${x.s}" aria-label="Remove this fast">${ICONS.close}</button></div>`).join("")}</div>` : "";
+  if (f.start) {
+    const ran = now - f.start, pct = clamp(ran / (goal * HOUR) * 100, 0, 100), done = ran >= goal * HOUR;
+    return `<section class="card fastcard" id="fastCard"><div class="mealtitle"><div><h3>Fasting</h3><p>${done ? "Goal reached" : `${esc(duration(goal * HOUR - ran))} to go`}</p></div><button class="btn small primary" data-pro="faststop">End fast</button></div>
+    <div class="fasttime"><b>${esc(duration(ran))}</b><span class="muted">of ${goal} hours</span></div><div class="bar"><i style="width:${pct}%;background:var(${done ? "--carbs" : "--ink"})"></i></div>
+    <div class="fastrow"><label>Started<input id="fastStartAt" type="datetime-local" max="${localInput(now)}" value="${localInput(f.start)}"></label>${goalSelect}</div>${history}</section>`;
+  }
+  const last = lastMealMs();
+  return `<section class="card fastcard" id="fastCard"><div class="mealtitle"><div><h3>Fasting</h3><p>${!last ? "Not fasting" : now - last < 6e4 ? "Last food just now" : `Last food ${esc(duration(now - last))} ago`}</p></div><button class="btn small" data-pro="faststart">Start now</button></div>
+  <div class="fastrow">${last && now - last >= 10 * 6e4 ? `<button class="btn small" data-pro="faststart" data-from="meal">Start from last food</button>` : ""}${goalSelect}</div>${history}</section>`;
+}
+function refreshFastCard() { const el = $("#fastCard"); if (el && !$("#fastStartAt:focus") && !$("#fastGoal:focus")) el.outerHTML = fastCard(); }
+function startFast(fromMeal) { const f = fastingData(); f.start = fromMeal && lastMealMs() || Date.now(); touch(); render(); }
+function endFast() {
+  const f = fastingData(); if (!f.start) return;
+  const e = Date.now(), ran = e - f.start, kept = ran >= 6e4;
+  if (kept) (f.log || (f.log = [])).push({ s: f.start, e });
+  f.log = (f.log || []).slice(-300); delete f.start; touch(); render();
+  setSave(kept ? `Fast saved: ${duration(ran)}` : "Fast was under a minute, so it was not saved");
+}
+function setFastStart(value) {
+  const ms = new Date(value).getTime(), f = fastingData();
+  if (!Number.isFinite(ms) || ms > Date.now() || Date.now() - ms > 7 * 24 * HOUR) { setSave("Choose a start time within the last 7 days."); refreshFastCard(); return; }
+  f.start = ms; touch(); refreshFastCard();
+}
+setInterval(() => { if (!document.hidden && view === "log") refreshFastCard(); }, 20000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && view === "log") refreshFastCard(); });
+
+/* Spreadsheet export */
+// Text that starts like a formula is prefixed so spreadsheet apps show it instead of running it.
+function csvCell(v) {
+  if (v == null || v === "") return "";
+  if (typeof v === "number") return Number.isFinite(v) ? String(+v.toFixed(2)) : "";
+  let s = String(v); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+async function saveCsv(name, rows) {
+  const text = "﻿" + rows.map(r => r.map(csvCell).join(",")).join("\r\n") + "\r\n", file = new File([text], name, { type: "text/csv" });
+  try { if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: name }); return; } } catch (e) { if (e?.name === "AbortError") return; }
+  const url = URL.createObjectURL(file), a = document.createElement("a"); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+const loggedDays = () => Object.keys(S.days).filter(d => peek(d).foods.length || peek(d).w).sort();
+function exportFoodsCsv() {
+  const rows = [["Date", "Time", "Meal", "Food", "Serving", "Servings", "Calories", "Protein (g)", "Carbs (g)", "Fat (g)", ...MICROS.map(m => `${m.label} (${m.u})`)]];
+  for (const d of loggedDays()) {
+    const foods = peek(d).foods.slice().sort((a, b) => (a.t || "99") .localeCompare(b.t || "99"));
+    for (const e of foods) rows.push([d, e.t || "", mealsOff() ? "" : e.meal, e.name, e.serv, e.qty, e.kcal, e.p, e.c, e.f, ...MICROS.map(m => e.n?.[m.k] ?? "")]);
+  }
+  saveCsv(`tare-food-log-${today()}.csv`, rows);
+}
+function exportDaysCsv() {
+  const T = trendMap(), u = unit(), rows = [["Date", `Weight (${u})`, `Trend weight (${u})`, "Calories", "Protein (g)", "Carbs (g)", "Fat (g)", "Calorie target", "Protein target (g)", "Carb target (g)", "Fat target (g)", "Foods logged", "Left out of estimate", ...MEASURES.map(([, l]) => `${l} (${lenUnit()})`), "Period"]];
+  for (const d of loggedDays()) {
+    const x = peek(d), t = totals(d), g = dayPlan(d);
+    rows.push([d, x.w ? toUser(x.w) : "", T[d] ? toUser(T[d]) : "", x.foods.length ? t.kcal : "", x.foods.length ? t.p : "", x.foods.length ? t.c : "", x.foods.length ? t.f : "", g.kcal || "", g.kcal ? g.p : "", g.kcal ? g.c : "", g.kcal ? g.f : "", x.foods.length, x.skip ? "yes" : "", ...MEASURES.map(([k]) => x.m?.[k] ? lenUser(x.m[k]) : ""), x.period ? "yes" : ""]);
+  }
+  saveCsv(`tare-daily-totals-${today()}.csv`, rows);
+}
+function exportFastsCsv() {
+  const stamp = ms => { const d = new Date(ms); return `${iso(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+  const rows = [["Start", "End", "Hours"], ...(S.profile.fasting?.log || []).map(f => [stamp(f.s), stamp(f.e), (f.e - f.s) / HOUR])];
+  saveCsv(`tare-fasts-${today()}.csv`, rows);
+}
+
+/* Foods high in a nutrient, from the on-device USDA foods */
+const RICH = [["p", "Protein", "g", 50], ...MICROS.filter(m => !MICRO_LIMITS.has(m.k)).map(m => [m.k, m.label, m.u, m.dv])];
+let richKey = "fiber", richBasis = "kcal", richList = [];
+// Seasonings, powders, and baby foods top these lists without being things people eat by the portion.
+// Ingredients, by-products, fortified drinks, and brand-name products are left out so the list shows everyday whole foods.
+const RICH_SKIP = /^(spices|seasoning|leavening|baking|babyfood|infant formula|gelatin|yeast|vital wheat|desserts, rennin|gums|formulated bar|beverages)|\b(powder|dehydrated|freeze-dried|dried|dry|crude|isolate|concentrate|flour|defatted|meal|meat extender|by-products|mature seeds, raw|with (added |high )?vitamin|spleen|lungs?|tablets|supplement|extract|peel|substitute|instant|fortified|breakfast type|pokeberry|sisymbrium|seaweed|mustard spinach|chrysanthemum|cloud ears)\b/;
+const branded = name => /\b[A-Z][A-Z'&-]{3,}\b/.test(name);
+function richValue(row, key) { const i = key === "p" ? 2 : 7 + MICROS.findIndex(m => m.k === key); return row[i]; }
+function richFoods() {
+  if (!foodDb) return [];
+  const found = [], dv = (RICH.find(n => n[0] === richKey) || RICH[0])[3];
+  for (const entry of foodDb) {
+    const r = entry.row, v = richValue(r, richKey);
+    if (!(v > 0) || RICH_SKIP.test(entry.lower) || branded(r[0])) continue;
+    if (richBasis === "kcal" && !(r[1] >= 20)) continue;
+    // A normal portion has to give a real share of the day, which drops herbs, sauces, and garnishes.
+    if (v * (r[6] > 0 ? r[6] : 100) / 100 < dv * .1) continue;
+    found.push({ entry, score: richBasis === "kcal" ? v / r[1] * 100 : v });
+  }
+  found.sort((a, b) => b.score - a.score);
+  // Keep one version of each food so the list is not ten cuts of the same fish.
+  const seen = new Set(), groups = new Map(), out = [];
+  for (const x of found) {
+    const parts = x.entry.lower.split(",").map(t => t.trim()), key = parts.slice(0, 2).join(","), group = parts[0];
+    if (seen.has(key) || (groups.get(group) || 0) >= 2) continue;
+    seen.add(key); groups.set(group, (groups.get(group) || 0) + 1); out.push(x);
+    if (out.length >= 15) break;
+  }
+  return out;
+}
+function richRows() {
+  const meta = RICH.find(n => n[0] === richKey) || RICH[0], [, label, u, dv] = meta;
+  if (!foodDb) { loadFoodDb().then(() => { if (view === "insights") refreshRich(); }).catch(() => {}); return `<p class="muted" style="margin:0">${esc(foodDbMessage())}</p>`; }
+  richList = richFoods();
+  if (!richList.length) return `<p class="muted" style="margin:0">No foods found.</p>`;
+  const amount = v => `${v >= 100 ? fmt(v) : v >= 10 ? Math.round(v) : +v.toFixed(1)} ${u}`;
+  return richList.map((x, i) => {
+    const r = x.entry.row, v = richValue(r, richKey), g = r[6] > 0 ? r[6] : 100, perPortion = v * g / 100, portion = r[6] > 0 ? `${r[5]} (${+g.toFixed(0)} g)` : "100 g";
+    const basis = richBasis === "kcal" ? `${amount(x.score)} per 100 kcal` : `${amount(v)} per 100 g`;
+    return `<button type="button" class="result richrow" data-pro="richadd" data-i="${i}"><span class="fooditem">${foodIcon(r[0])}<span><b>${esc(r[0])}</b><small>${esc(basis)} · ${esc(amount(perPortion))} in ${esc(portion)}, ${Math.round(perPortion / dv * 100)}% DV</small></span></span><span class="mono" aria-hidden="true">+</span></button>`;
+  }).join("") + `<p class="muted" style="margin:8px 0 0;font-size:12px">${label} values come from the USDA foods saved on this phone. Tap a food to log it.</p>`;
+}
+function richCard() {
+  return `<section class="card stack"><div class="mealhead"><h2>Foods high in</h2><select id="richKey" aria-label="Nutrient" style="width:auto;max-width:55%">${RICH.map(n => opt(n[0], n[1], richKey)).join("")}</select></div>
+  <div class="seg" style="justify-self:start" role="group" aria-label="Compare by">${[["kcal", "Per calorie"], ["g", "Per 100 g"]].map(([k, l]) => `<button type="button" data-pro="richbasis" data-b="${k}" aria-pressed="${richBasis === k}">${l}</button>`).join("")}</div>
+  <div class="results" id="richList">${richRows()}</div></section>`;
+}
+function refreshRich() {
+  const list = $("#richList"); if (!list) return;
+  list.innerHTML = richRows();
+  document.querySelectorAll("[data-pro=richbasis]").forEach(b => b.setAttribute("aria-pressed", b.dataset.b === richBasis));
+}
+function addRichFood(i) {
+  const x = richList[i]; if (!x) return;
+  openAdd(mealForNow(), "search");
+  M.q = x.entry.row[0]; M.sel = dbFood(x.entry); renderDlg();
+  const q = $("#qty"); if (q) { q.focus(); q.select(); }
+}
+
+/* Food icons */
+const FOOD_ICONS = {
+  plantmilk: '<path d="M8 3h8v3l2 3v11a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V9l2-3z"/><path d="M6 9h12"/><path d="M12 13c-1.5 1-1.5 3 0 4 1.5-1 1.5-3 0-4z"/>',
+  alcohol: '<path d="M8 3h8l-.5 5a3.5 3.5 0 0 1-7 0z"/><path d="M12 12v8M8.5 20h7"/>',
+  coffee: '<path d="M5 9h12v5a5 5 0 0 1-5 5h-2a5 5 0 0 1-5-5z"/><path d="M17 10.5h1a2.5 2.5 0 0 1 0 5h-1.3"/><path d="M9 3.5v2.5M13 3.5v2.5"/>',
+  icecream: '<path d="M8 11l4 10 4-10"/><path d="M7 11a5 5 0 0 1 10 0z"/>',
+  dairy: '<path d="M8 3h8v3l2 3v11a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V9l2-3z"/><path d="M6 9h12M8 6h8"/>',
+  bar: '<rect x="3" y="8" width="18" height="8" rx="2"/><path d="M7.5 8v8M16.5 8v8"/>',
+  pizza: '<path d="M12 21 3.5 6.5c5.5-2.7 11.5-2.7 17 0z"/><path d="M5 9c4.5-2 9.5-2 14 0"/><circle cx="12" cy="12.5" r="1"/><circle cx="9.5" cy="10.5" r=".8"/><circle cx="14.5" cy="10.5" r=".8"/>',
+  burger: '<path d="M4 11a8 6 0 0 1 16 0z"/><path d="M3.5 14.5h17"/><path d="M5 17.5h14a1.5 1.5 0 0 1-1.5 2.5h-11A1.5 1.5 0 0 1 5 17.5z"/>',
+  soup: '<path d="M3 11h18a9 8 0 0 1-18 0z"/><path d="M9 3.5c-1 1.5 1 2.5 0 4.5M14 3.5c-1 1.5 1 2.5 0 4.5"/>',
+  bread: '<path d="M6 11a3.5 3.5 0 0 1 0-7h12a3.5 3.5 0 0 1 0 7v8a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1z"/>',
+  sweets: '<circle cx="12" cy="12" r="8.5"/><circle cx="9" cy="9.5" r=".9"/><circle cx="14.5" cy="9" r=".9"/><circle cx="14" cy="14.5" r=".9"/><circle cx="9.5" cy="15" r=".9"/>',
+  egg: '<path d="M12 3c3.5 0 6.5 5.5 6.5 10a6.5 6.5 0 0 1-13 0C5.5 8.5 8.5 3 12 3z"/>',
+  cheese: '<path d="M3 18v-6.5L15 6l6 5.5V18z"/><path d="M3 11.5h18"/><circle cx="8" cy="15" r="1"/><circle cx="15" cy="14.5" r="1.3"/>',
+  nut: '<path d="M12 3c4 3 6 7 5 11s-4 6-5 7c-1-1-4-3-5-7s1-8 5-11z"/><path d="M12 8v9"/>',
+  fat: '<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/>',
+  sauce: '<path d="M10 2.5h4V6l3 4v10a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V10l3-4z"/><path d="M7 13h10"/>',
+  drink: '<path d="M6 7h12l-1.5 13.5h-9z"/><path d="M13 7l2-4h3"/>',
+  fish: '<path d="M5 12c3-4 6-5 9-5s5.5 2 7 5c-1.5 3-4 5-7 5s-6-1-9-5z"/><path d="M5 12 2 8.5v7z"/><circle cx="16.5" cy="11" r=".8"/>',
+  poultry: '<ellipse cx="14.5" cy="9.5" rx="5.5" ry="4.8" transform="rotate(-45 14.5 9.5)"/><path d="M10.6 13.4 6.5 17.5"/><circle cx="5" cy="17.2" r="1.6"/><circle cx="6.8" cy="19" r="1.6"/>',
+  meat: '<path d="M4.5 13C4 8 8 4 13 4s8 3 7.5 7.5S16 20 11 20c-3.5 0-6-3-6.5-7z"/><circle cx="13.5" cy="10" r="2.2"/>',
+  greenveg: '<path d="M5 19C5 10.5 10 5 20 4c0 10-5.5 15-15 15z"/><path d="M5 19l8-8"/>',
+  legume: '<path d="M4 19C6 10 12 5 20 5c-1 8.5-6.5 14-16 14z"/><circle cx="9" cy="14.5" r="1.4"/><circle cx="12.5" cy="11.3" r="1.4"/><circle cx="16" cy="8.4" r="1.2"/>',
+  grain: '<path d="M12 21V7"/><path d="M12 7c-1.8-.9-2.6-2.6-2.6-4.6 1.8.3 2.6 2.1 2.6 4.6zM12 7c1.8-.9 2.6-2.6 2.6-4.6-1.8.3-2.6 2.1-2.6 4.6z"/><path d="M12 12c-2.4 0-3.9-1.3-4.4-3.4 2.3 0 3.9 1.3 4.4 3.4zM12 12c2.4 0 3.9-1.3 4.4-3.4-2.3 0-3.9 1.3-4.4 3.4zM12 16.5c-2.4 0-3.9-1.3-4.4-3.4 2.3 0 3.9 1.3 4.4 3.4zM12 16.5c2.4 0 3.9-1.3 4.4-3.4-2.3 0-3.9 1.3-4.4 3.4z"/>',
+  fruit: '<path d="M12 7.5c-1.5-1-4-1.5-5.5 0C4 10 5 15.5 7.5 18.5c1.5 2 3 2 4.5 1 1.5 1 3 1 4.5-1C19 15.5 20 10 17.5 7.5c-1.5-1.5-4-1-5.5 0z"/><path d="M12 7.5c0-2 1-3.5 2.5-4.5"/>',
+  veg: '<path d="M14.5 9.5 4.6 19.4c-.5.5.1 1 .6.6l9.8-9.9"/><path d="M14.5 9.5c1.6-1.6 3.6-1.4 4.6-.4s1.2 3-.4 4.6l-3.5 3.5"/><path d="M15.5 8.5 17 4M15.5 8.5 20 7"/>',
+  plate: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/>'
+};
+// Categories are listed in priority order. The keyword that appears first in the name wins, so "Oats, whey and banana" shows grain.
+const FOOD_KINDS = [
+  ["plantmilk", /\b(almond|soy|oat|rice|coconut|cashew|pea) (milk|beverage)/],
+  ["alcohol", /\b(beer|wine|vodka|whiske?y|rum|gin|tequila|liqueur|alcoholic|cocktail|margarita|sake|brandy|cider)\b/],
+  ["coffee", /\b(coffee|espresso|latte|cappuccino|americano|mocha|tea|chai)\b/],
+  ["icecream", /ice cream|frozen yogurt|frozen novelt|gelato|sorbet|sherbet|popsicle/],
+  ["dairy", /\b(whey|casein|protein (powder|shake)|shake)\b/],
+  ["bar", /\bbars?\b/],
+  ["pizza", /pizza/],
+  ["burger", /cheeseburger|hamburger|burger|sandwich|burrito|taco|hot dog|fast foods?|nuggets|french fries|fries\b|mcdonald|burger king|kfc|wendy|subway|restaurant|wrap\b|quesadilla|nachos/],
+  ["soup", /\b(soup|stew|chowder|broth|chili|ramen|pho)\b/],
+  ["bread", /english muffin|bagel|bread|toast|\bbuns?\b|\brolls?\b|tortilla|pita|croissant|biscuit|crackers?|naan|waffle|pancake|french toast/],
+  ["sweets", /chocolate|cand(y|ies)|cookie|cake|brownie|donut|doughnut|\bpie\b|pastry|muffin|\bsugars?\b|honey|syrup|\bjam\b|jelly|dessert|pudding|gumm|marshmallow|frosting|sweet roll|danish|candied/],
+  ["egg", /\beggs?\b|omelet|frittata/],
+  ["cheese", /cheese|parmesan|mozzarella|cheddar|feta|ricotta|brie|gouda/],
+  ["nut", /peanut|almond|walnut|cashew|pecan|pistachio|hazelnut|macadamia|\bnuts?\b|seeds?\b|chia|flax|tahini|trail mix/],
+  ["fat", /olive oil|\boils?\b|mayonnaise|margarine|\blard\b|shortening|dressing|\bghee\b|\bbutter\b/],
+  ["dairy", /\bmilk|yogh?urt|kefir|\bcream\b|creamer|skyr/],
+  ["sauce", /ketchup|mustard(?! greens)|sauce|salsa|gravy|relish|vinegar|condiment|dip\b/],
+  ["drink", /\w+ juice|juice|\bsoda\b|\bcola\b|lemonade|smoothie|\bwater\b|drink|carbonated|kombucha/],
+  ["fish", /fish|salmon|tuna|\bcod\b|tilapia|trout|shrimp|prawn|crab|lobster|sardine|anchov|mackerel|halibut|scallop|\bclams?\b|oyster|mussel|crustacean|mollus|seafood|sushi|pollock|catfish|bass\b/],
+  ["poultry", /chicken|turkey|\bduck|goose|poultry|quail|ostrich|\bemu\b|pheasant/],
+  ["meat", /beef|steak|pork|\bham\b|bacon|lamb|veal|sausage|salami|pepperoni|jerky|venison|bison|game meat|\bmeat|brisket|\bribs?\b|frankfurter|bologna|\bdeli\b|chorizo|prosciutto/],
+  ["greenveg", /mustard greens|collards?|green beans|snap beans|string beans|lettuce|spinach|kale|\bsalad|greens|chard|arugula|cabbage|broccoli|brussels|celery|asparagus|herbs?\b|basil|parsley|cilantro|spices?\b/],
+  ["legume", /\bbeans?\b|lentil|chickpea|hummus|\btofu\b|tempeh|edamame|\bpeas?\b|soybean|\bsoy\b|falafel/],
+  ["grain", /\boats?\b|oatmeal|\brice\b|pasta|noodle|spaghetti|macaroni|quinoa|cereal|granola|flakes|barley|wheat|flour|couscous|bulgur|grits|popcorn|millet|buckwheat|pretzel|\bbran\b|muesli/],
+  ["fruit", /apple|banana|orange|berr(y|ies)|grape|melon|pineapple|mango|peach|pear|plum|cherr|kiwi|lemon|lime|apricot|\bfigs?\b|\bdates?\b|raisin|avocado|papaya|pomegranate|tangerine|nectarine|coconut|fruit|clementine|guava|lychee|persimmon|acerola/],
+  ["veg", /carrot|pepper|tomato|cucumber|onion|mushroom|\bcorn\b|potato|squash|zucchini|cauliflower|eggplant|beet|radish|garlic|vegetable|okra|artichoke|leek|pumpkin|\byams?\b|turnip|parsnip|olive|pickle|sprouts/]
+];
+const foodKindCache = new Map();
+function foodKind(name) {
+  const lower = String(name || "").toLowerCase();
+  if (foodKindCache.has(lower)) return foodKindCache.get(lower);
+  let best = "plate", at = Infinity;
+  for (const [kind, re] of FOOD_KINDS) { const i = lower.search(re); if (i >= 0 && i < at) { best = kind; at = i; } }
+  if (foodKindCache.size > 4000) foodKindCache.clear();
+  foodKindCache.set(lower, best);
+  return best;
+}
+const foodIcon = name => `<span class="foodicon" aria-hidden="true"><svg viewBox="0 0 24 24">${FOOD_ICONS[foodKind(name)]}</svg></span>`;
