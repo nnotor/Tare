@@ -338,3 +338,33 @@ dialog::backdrop { background: rgba(0, 0, 0, .68); }
 .dlgdate { margin-top: 3px; color: var(--muted); font-size: 13px; font-weight: 600; }
 .addhint { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--raised); color: var(--ink); }
 .addhint svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+
+/* iPhone Duo side rail. The clock sits at the top of the rail, tabs sit at the bottom within thumb reach,
+   and back, forward, and close sit at mid-height, the way Duo apps lay out their controls. */
+html[data-rail="right"] { --rail-w: var(--safe-right); }
+html[data-rail="left"] { --rail-w: var(--safe-left); }
+html[data-rail] body { padding-bottom: calc(28px + var(--safe-bottom)); }
+html[data-rail] nav {
+  top: auto; bottom: 0; width: var(--rail-w); flex-direction: column; justify-content: flex-end; align-items: stretch; gap: 4px;
+  padding: 12px 0 calc(14px + var(--safe-bottom)); background: none; border: 0; -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+html[data-rail="right"] nav { left: auto; right: 0; }
+html[data-rail="left"] nav { left: 0; right: auto; }
+html[data-rail] nav button, html[data-rail] nav button[aria-current="page"] { flex: none; width: auto; max-width: none; min-height: 54px; margin-inline: 6px; padding: 4px 0; border-radius: 16px; }
+html[data-rail] nav button[aria-current="page"] { background: rgba(255, 255, 255, .07); }
+/* Centered between the clock area (about 168px tall) and the tabs (about 312px tall) */
+html[data-rail] .weeknav { position: fixed; z-index: 6; flex-direction: column; gap: 10px; top: max(220px, calc((100dvh - 144px) / 2)); transform: translateY(-50%); }
+html[data-rail="right"] .weeknav { right: calc((var(--rail-w) - 46px) / 2); }
+html[data-rail="left"] .weeknav { left: calc((var(--rail-w) - 46px) / 2); }
+html[data-rail] .dlgclose { top: max(168px, calc(50% - 23px)); }
+html[data-rail="right"] .dlgclose { right: calc((var(--rail-w) - 46px) / 2); left: auto; }
+html[data-rail="left"] .dlgclose { left: calc((var(--rail-w) - 46px) / 2); right: auto; }
+html[data-rail] .dlghead .mealhead { padding-right: 0; }
+html[data-rail] #toast { bottom: calc(16px + var(--safe-bottom)); }
+@media (max-height: 640px) {
+  html[data-rail] nav { gap: 2px; }
+  html[data-rail] nav button, html[data-rail] nav button[aria-current="page"] { min-height: 46px; }
+}
+@media (max-height: 540px) {
+  html[data-rail] nav button, html[data-rail] nav button[aria-current="page"] { min-height: 42px; font-size: 0; gap: 0; }
+}
