@@ -288,7 +288,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .68); }
 .fastrow .faststart { flex: 1 1 100%; }
 .fastrow > select, .fasttime select { width: auto; border-radius: 999px; padding-inline: 14px 10px; }
 .fasttime { align-items: center; flex-wrap: wrap; }
-.fasttime select { min-height: 36px; height: 36px; padding-block: 4px; font-weight: 650; }
+.fastcard .fasttime select { min-height: 36px; height: 36px; padding-block: 4px; font-weight: 650; }
 .fastlog { display: grid; border-top: 1px solid var(--line); }
 .fastlog > div { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 13px; }
 .fastlog > div span:first-child { font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -329,7 +329,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .68); }
 .heat .log, .legend .key.log { background: rgba(79, 209, 165, .38); }
 .heat .wgh, .legend .key.wgh { background: rgba(255, 194, 71, .5); }
 .heat .future { background: none; box-shadow: inset 0 0 0 1px var(--line); }
-.heat .today { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--ink); }
+.heat .today { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px var(--ink); }
 @media (max-width: 360px) {
   .form > .half:has(.servrow) { grid-column: 1 / -1; }
 }
