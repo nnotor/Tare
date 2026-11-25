@@ -149,7 +149,7 @@ dialog::before{content:"";position:absolute;inset:0 0 auto;height:var(--safe-top
 <dialog id="dlg" aria-label="Add food"></dialog>
 <input id="importFile" type="file" accept="application/json,.json" hidden>
 
-<script>window.TARE_BUILD="16";window.repairTareBuild=function(){try{const key="tare-build-repair",tries=Number(sessionStorage.getItem(key)||0);if(tries>=2)return false;sessionStorage.setItem(key,String(tries+1));const reload=()=>location.reload(),worker=navigator.serviceWorker;if(worker)worker.getRegistration().then(r=>r&&r.update()).catch(()=>{}).finally(()=>setTimeout(reload,700));else reload();return true}catch(e){return false}}</script>
+<script>window.TARE_BUILD="17";window.repairTareBuild=function(){try{const key="tare-build-repair",tries=Number(sessionStorage.getItem(key)||0);if(tries>=2)return false;sessionStorage.setItem(key,String(tries+1));const reload=()=>location.reload(),worker=navigator.serviceWorker;if(worker)worker.getRegistration().then(r=>r&&r.update()).catch(()=>{}).finally(()=>setTimeout(reload,700));else reload();return true}catch(e){return false}}</script>
 <script src="features.js"></script>
 <script>if(window.TARE_FEATURES_BUILD!==window.TARE_BUILD)window.repairTareBuild();else try{sessionStorage.removeItem("tare-build-repair")}catch(e){}</script>
 <script>
@@ -322,7 +322,7 @@ function seedDemo(){let seed=7;const rnd=()=>(seed=seed*16807%2147483647)/214748
 const VIEWS=["log","trends","track","insights","plan"];
 function rememberView(){try{sessionStorage.setItem("tare-view",view)}catch(e){}}
 function route(fromLink){let saved="";try{saved=sessionStorage.getItem("tare-view")||""}catch(e){}const h=location.hash.slice(1),pick=fromLink||!VIEWS.includes(saved)?h:saved;if(VIEWS.includes(pick))view=pick}
-function render(){document.querySelectorAll("nav button").forEach(b=>b.dataset.v===view?b.setAttribute("aria-current","page"):b.removeAttribute("aria-current"));
+function render(){rememberView();document.querySelectorAll("nav button").forEach(b=>b.dataset.v===view?b.setAttribute("aria-current","page"):b.removeAttribute("aria-current"));
   let b="";if(S.demo)b=`<div class="notice"><span>You are viewing example data. Set up your plan to start your own log.</span><button class="btn" data-act="setup">Set up my plan</button></div>`;
   else if(checkinDue()){const n=targets();b=`<div class="notice"><span>Your weekly check-in is ready. New target: <b>${fmt(n.kcal)} kcal</b>, ${n.p}P / ${n.c}C / ${n.f}F.</span><button class="btn" data-act="checkin">Apply targets</button></div>`}
   else if(backupDue())b=`<div class="notice"><span>Your log exists only on this phone. Save a backup so you can restore it if browser data is cleared.</span><button class="btn" data-act="export">Back up now</button></div>`;
