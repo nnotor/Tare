@@ -71,6 +71,7 @@ Everything is free. There are no subscriptions, paywalls, or accounts.
 - Installs to your home screen and opens full screen
 - Opens offline after the first online launch
 - Adapts to compact, foldable, and desktop screens
+- On iPhone Duo's outer screen, moves the tabs and the back, forward, and close buttons into the side rail
 - Supports light and dark mode
 - Uses camera zoom, flashlight, and continuous focus when the device allows it
 

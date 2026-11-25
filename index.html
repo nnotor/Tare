@@ -25,7 +25,7 @@ button,label,select,input{touch-action:manipulation}
 :root{--bg:#eef2f4;--panel:#fff;--ink:#10212b;--muted:#566a75;--line:#cdd8dd;--accent:#0b5fd6;--on-accent:#fff;--protein:#0b8378;--carbs:#b86e00;--fat:#8a3f9e;--warn-bg:#fff2d6;--warn:#7a4b00;--bad:#b3261e;
 --display:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 *{box-sizing:border-box}
-body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 88px}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45;padding-left:max(16px,var(--safe-left));padding-right:max(16px,var(--safe-right));padding-block:0 88px}
 .wrap{max-width:1040px;margin:0 auto;display:grid;gap:16px}
 header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-block:14px 2px;flex-wrap:wrap}
 .brand{font:900 28px/1 var(--display);font-stretch:118%;letter-spacing:-.02em}
@@ -149,7 +149,7 @@ dialog::before{content:"";position:absolute;inset:0 0 auto;height:var(--safe-top
 <dialog id="dlg" aria-label="Add food"></dialog>
 <input id="importFile" type="file" accept="application/json,.json" hidden>
 
-<script>window.TARE_BUILD="15";window.repairTareBuild=function(){try{const key="tare-build-repair",tries=Number(sessionStorage.getItem(key)||0);if(tries>=2)return false;sessionStorage.setItem(key,String(tries+1));const reload=()=>location.reload(),worker=navigator.serviceWorker;if(worker)worker.getRegistration().then(r=>r&&r.update()).catch(()=>{}).finally(()=>setTimeout(reload,700));else reload();return true}catch(e){return false}}</script>
+<script>window.TARE_BUILD="16";window.repairTareBuild=function(){try{const key="tare-build-repair",tries=Number(sessionStorage.getItem(key)||0);if(tries>=2)return false;sessionStorage.setItem(key,String(tries+1));const reload=()=>location.reload(),worker=navigator.serviceWorker;if(worker)worker.getRegistration().then(r=>r&&r.update()).catch(()=>{}).finally(()=>setTimeout(reload,700));else reload();return true}catch(e){return false}}</script>
 <script src="features.js"></script>
 <script>if(window.TARE_FEATURES_BUILD!==window.TARE_BUILD)window.repairTareBuild();else try{sessionStorage.removeItem("tare-build-repair")}catch(e){}</script>
 <script>
@@ -330,9 +330,9 @@ function render(){document.querySelectorAll("nav button").forEach(b=>b.dataset.v
   $("#main").innerHTML=view==="log"?logView():view==="trends"?trendsView():view==="track"?trackView():view==="insights"?insightsView():planView();if(view==="trends")drawCharts();if(view==="plan"){showOffline();syncCoachFields()}if(view==="track")showPhotos()}
 let swError="";
 async function showOffline(note=""){const main=$("#offlineStatus"),detail=$("#offlineDetail");if(!main)return;const installed=matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
-  if(!("serviceWorker" in navigator)||!("caches" in window)){main.textContent="This browser cannot save Tare for offline use.";detail.textContent=`home screen: ${installed?"yes":"no"} · worker support: no`;return}
+  if(!("serviceWorker" in navigator)||!("caches" in window)){main.textContent="This browser cannot save Tare for offline use.";detail.textContent=`home screen: ${installed?"yes":"no"} · worker support: no${railText()}`;return}
   try{const reg=await navigator.serviceWorker.getRegistration(),controls=!!navigator.serviceWorker.controller,keys=(await caches.keys()).filter(k=>k.startsWith("tare-")),name=keys.sort().pop()||"none";const required=["index.html","features.js","theme.css","foods.json","manifest.webmanifest","icon-192.png","icon-512.png","apple-touch-icon.png"];let saved=0;if(name!=="none"){const c=await caches.open(name),rs=await c.keys(),files=new Set(rs.map(r=>new URL(r.url).pathname.split("/").pop()));saved=required.filter(f=>files.has(f)).length}
-    const state=reg?.active?.state||reg?.waiting?.state||reg?.installing?.state||"none",ready=controls&&saved===required.length;if(!$("#offlineStatus"))return;main.textContent=note||(ready?"Ready. Tare should open in airplane mode.":"Not ready. Tap Prepare for offline while connected, then fully close and reopen Tare.");detail.textContent=`home screen: ${installed?"yes":"no"} · worker: ${state} · controls app: ${controls?"yes":"no"} · saved files: ${saved}/${required.length} · cache: ${name}${swError?` · error: ${swError}`:""}`}
+    const state=reg?.active?.state||reg?.waiting?.state||reg?.installing?.state||"none",ready=controls&&saved===required.length;if(!$("#offlineStatus"))return;main.textContent=note||(ready?"Ready. Tare should open in airplane mode.":"Not ready. Tap Prepare for offline while connected, then fully close and reopen Tare.");detail.textContent=`home screen: ${installed?"yes":"no"} · worker: ${state} · controls app: ${controls?"yes":"no"} · saved files: ${saved}/${required.length} · cache: ${name}${swError?` · error: ${swError}`:""}${railText()}`}
   catch(e){main.textContent=note||"Tare could not read its offline storage.";detail.textContent=`home screen: ${installed?"yes":"no"} · error: ${e?.name||"Error"}: ${e?.message||""}`}}
 async function prepareOffline(){const main=$("#offlineStatus");if(main)main.textContent="Saving Tare to this phone.";try{swError="";const reg=await navigator.serviceWorker.register("sw.js",{updateViaCache:"none"});await reg.update();await Promise.race([navigator.serviceWorker.ready,new Promise((_,j)=>setTimeout(()=>j(new Error("worker timed out")),12000))]);await new Promise(r=>setTimeout(r,1200));await showOffline(navigator.serviceWorker.controller?"":"Saved. Fully close and reopen Tare once to finish.")}catch(e){swError=`${e?.name||"Error"}: ${e?.message||""}`;await showOffline("Tare could not be saved for offline use.")}}
 function trendsView(){const e=estimate(),trend=latestTrend(),conf=e.conf>=.7?"High confidence":e.conf>=.3?"Building confidence":"Starting estimate",w=e.rate*7;
@@ -499,9 +499,15 @@ let rt;addEventListener("resize",()=>{clearTimeout(rt);rt=setTimeout(()=>{if(vie
 {const dlg=$("#dlg"),nativeClose=dlg.close.bind(dlg);dlg.close=(...args)=>{stopScan();nativeClose(...args)};dlg.addEventListener("cancel",()=>stopScan());dlg.addEventListener("close",()=>stopScan())}
 addEventListener("pagehide",()=>stopScan());
 // Keep the add-food window above the keyboard and matched to the current fold state.
+// iPhone Duo's outer display keeps the clock and every app's controls in a side rail, which iOS reports as a wide side safe area.
+// When it is there, Tare moves its tabs and its back, forward, and close buttons into the rail like a Duo app.
+let railWidth=0;
+function syncRail(){const probe=document.createElement("div");probe.style.cssText="position:fixed;visibility:hidden;pointer-events:none;padding-left:var(--safe-left);padding-right:var(--safe-right)";document.body.append(probe);const cs=getComputedStyle(probe),l=parseFloat(cs.paddingLeft)||0,r=parseFloat(cs.paddingRight)||0;probe.remove();const side=r>=70?"right":l>=70?"left":"",root=document.documentElement;railWidth=side==="right"?r:side==="left"?l:0;if(side)root.dataset.rail=side;else delete root.dataset.rail}
+const railText=()=>railWidth?` · side rail: ${document.documentElement.dataset.rail} ${Math.round(railWidth)}px`:"";
 function syncViewport(){const v=window.visualViewport;if(!v)return;const s=document.documentElement.style;s.setProperty("--app-h",Math.round(v.height)+"px");s.setProperty("--vv-top",Math.round(v.offsetTop)+"px")}
 if(window.visualViewport){visualViewport.addEventListener("resize",syncViewport);visualViewport.addEventListener("scroll",syncViewport);addEventListener("orientationchange",syncViewport);syncViewport()}
 document.addEventListener("visibilitychange",()=>{if(document.hidden&&M&&["live","starting"].includes(M.scan?.state)){stopScan();setScan({state:"idle"})}});
+syncRail();addEventListener("resize",syncRail);addEventListener("orientationchange",syncRail);
 load();
 startDayWatch();
 warmScanner();
