@@ -149,7 +149,7 @@ dialog::before{content:"";position:absolute;inset:0 0 auto;height:var(--safe-top
 <dialog id="dlg" aria-label="Add food"></dialog>
 <input id="importFile" type="file" accept="application/json,.json" hidden>
 
-<script>window.TARE_BUILD="14";window.repairTareBuild=function(){try{const key="tare-build-repair",tries=Number(sessionStorage.getItem(key)||0);if(tries>=2)return false;sessionStorage.setItem(key,String(tries+1));const reload=()=>location.reload(),worker=navigator.serviceWorker;if(worker)worker.getRegistration().then(r=>r&&r.update()).catch(()=>{}).finally(()=>setTimeout(reload,700));else reload();return true}catch(e){return false}}</script>
+<script>window.TARE_BUILD="15";window.repairTareBuild=function(){try{const key="tare-build-repair",tries=Number(sessionStorage.getItem(key)||0);if(tries>=2)return false;sessionStorage.setItem(key,String(tries+1));const reload=()=>location.reload(),worker=navigator.serviceWorker;if(worker)worker.getRegistration().then(r=>r&&r.update()).catch(()=>{}).finally(()=>setTimeout(reload,700));else reload();return true}catch(e){return false}}</script>
 <script src="features.js"></script>
 <script>if(window.TARE_FEATURES_BUILD!==window.TARE_BUILD)window.repairTareBuild();else try{sessionStorage.removeItem("tare-build-repair")}catch(e){}</script>
 <script>
@@ -317,7 +317,11 @@ function seedDemo(){let seed=7;const rnd=()=>(seed=seed*16807%2147483647)/214748
   S={demo:true,profile:p,days,custom:[]};p.plan=targets();p.plan.setOn=add(t,-3)}
 
 /* Rendering */
-function route(){const h=location.hash.slice(1);if(["log","trends","track","insights","plan"].includes(h))view=h}
+// Tare never changes its address while running. On iPhone home screen apps, a changed address makes iOS ask for the camera again,
+// so the open tab is remembered for this session instead. A #tab link still opens that tab.
+const VIEWS=["log","trends","track","insights","plan"];
+function rememberView(){try{sessionStorage.setItem("tare-view",view)}catch(e){}}
+function route(fromLink){let saved="";try{saved=sessionStorage.getItem("tare-view")||""}catch(e){}const h=location.hash.slice(1),pick=fromLink||!VIEWS.includes(saved)?h:saved;if(VIEWS.includes(pick))view=pick}
 function render(){document.querySelectorAll("nav button").forEach(b=>b.dataset.v===view?b.setAttribute("aria-current","page"):b.removeAttribute("aria-current"));
   let b="";if(S.demo)b=`<div class="notice"><span>You are viewing example data. Set up your plan to start your own log.</span><button class="btn" data-act="setup">Set up my plan</button></div>`;
   else if(checkinDue()){const n=targets();b=`<div class="notice"><span>Your weekly check-in is ready. New target: <b>${fmt(n.kcal)} kcal</b>, ${n.p}P / ${n.c}C / ${n.f}F.</span><button class="btn" data-act="checkin">Apply targets</button></div>`}
@@ -455,7 +459,7 @@ async function exportData(){const name=`tare-backup-${today()}.json`,stamp=today
 
 /* Events */
 document.addEventListener("click",async ev=>{const b=ev.target.closest("[data-act]");if(!b)return;const a=b.dataset.act;
-  if(a==="view"){view=b.dataset.v;setup=false;try{history.replaceState(null,"","#"+view)}catch(e){location.hash=view}render();scrollTo(0,0)}
+  if(a==="view"){view=b.dataset.v;setup=false;rememberView();render();scrollTo(0,0)}
   if(a==="day"){cursor=add(cursor,+b.dataset.n);if(cursor>today())cursor=today();render()}
   if(a==="add")openAdd(b.dataset.meal,b.dataset.tab||"search");
   if(a==="remove")removeEntry(cursor,b.dataset.id);
@@ -490,7 +494,7 @@ document.addEventListener("submit",ev=>{ev.preventDefault();const f=ev.target,t=
     S.profile=off?{...old,unit:u,mode:"off",lastMode,startKg:old.startKg||(kg>0?kg:undefined)}:{...old,unit:u,mode:old.mode==="off"?(old.lastMode||"coached"):old.mode,sex:d.get("sex"),age:num(d.get("age")),heightCm:u==="kg"?h:h*2.54,activity:num(d.get("activity")),goal:num(d.get("goal")),protein:num(d.get("protein")),startKg:old.startKg||kg};
     const hadWeight=weights().length>0,edited=f.querySelector("#kg")?.dataset.edited==="1";if(w>0&&(was||!hadWeight||edited)){day(today()).w=+kg.toFixed(3)}S.profile.plan=targets();setup=false;cursor=today();if(was){view="log"}touchAll();render();scrollTo(0,0)}});
 $("#importFile").addEventListener("change",async ev=>{const file=ev.target.files[0];ev.target.value="";if(!file)return;try{restoreBackup(JSON.parse(await file.text()))}catch(e){setSave("That file is not a Tare backup.")}});
-addEventListener("hashchange",()=>{route();render()});
+addEventListener("hashchange",()=>{route(true);rememberView();render()});
 let rt;addEventListener("resize",()=>{clearTimeout(rt);rt=setTimeout(()=>{if(view==="trends")drawCharts()},150)});
 {const dlg=$("#dlg"),nativeClose=dlg.close.bind(dlg);dlg.close=(...args)=>{stopScan();nativeClose(...args)};dlg.addEventListener("cancel",()=>stopScan());dlg.addEventListener("close",()=>stopScan())}
 addEventListener("pagehide",()=>stopScan());

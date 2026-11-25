@@ -1,5 +1,5 @@
 /* Tare feature module: coaching programs, recipes, label scanning, tracking, and insights. */
-window.TARE_FEATURES_BUILD = "14";
+window.TARE_FEATURES_BUILD = "15";
 // A page from an older release cannot safely run this code, so reload it into the matching version.
 if (window.TARE_BUILD !== window.TARE_FEATURES_BUILD && !window.repairTareBuild) {
   try {
