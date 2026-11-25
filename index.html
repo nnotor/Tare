@@ -89,7 +89,7 @@ dialog[open]{display:flex}
 dialog::backdrop{background:rgba(5,15,20,.55)}
 .results{display:grid;max-height:330px;overflow:auto;border:1px solid var(--line);border-radius:6px}
 .result{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:8px 10px;cursor:pointer}
-.result[aria-selected="true"]{background:var(--bg)}
+.result[aria-pressed="true"]{background:var(--bg)}
 .result small{display:block;color:var(--muted)}
 .chooser{display:grid;grid-template-columns:90px minmax(0,1fr) auto;gap:10px;align-items:center}
 .viewfinder{position:relative;aspect-ratio:4/3;width:100%;max-width:100%;background:#050b0e;overflow:hidden;border-radius:6px}
@@ -142,14 +142,14 @@ dialog::before{content:"";position:absolute;inset:0 0 auto;height:var(--safe-top
     <button data-act="view" data-v="insights"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-6M12 20V5M19 20v-10"/></svg>Insights</button>
     <button data-act="view" data-v="plan"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>Plan</button>
   </nav><div class="save" id="save" role="status">Loading</div></header>
-  <div id="banner"></div>
+  <div id="banner" role="region" aria-label="Notice"></div>
   <main id="main" class="stack"><div class="card muted">Loading your log.</div></main>
 </div>
 <div id="toast" role="status" aria-live="polite" hidden></div>
 <dialog id="dlg" aria-label="Add food"></dialog>
 <input id="importFile" type="file" accept="application/json,.json" hidden>
 
-<script>window.TARE_BUILD="21";window.repairTareBuild=function(){try{const key="tare-build-repair",tries=Number(sessionStorage.getItem(key)||0);if(tries>=2)return false;sessionStorage.setItem(key,String(tries+1));const reload=()=>location.reload(),worker=navigator.serviceWorker;if(worker)worker.getRegistration().then(r=>r&&r.update()).catch(()=>{}).finally(()=>setTimeout(reload,700));else reload();return true}catch(e){return false}}</script>
+<script>window.TARE_BUILD="22";window.repairTareBuild=function(){try{const key="tare-build-repair",tries=Number(sessionStorage.getItem(key)||0);if(tries>=2)return false;sessionStorage.setItem(key,String(tries+1));const reload=()=>location.reload(),worker=navigator.serviceWorker;if(worker)worker.getRegistration().then(r=>r&&r.update()).catch(()=>{}).finally(()=>setTimeout(reload,700));else reload();return true}catch(e){return false}}</script>
 <script src="features.js"></script>
 <script>if(window.TARE_FEATURES_BUILD!==window.TARE_BUILD)window.repairTareBuild();else try{sessionStorage.removeItem("tare-build-repair")}catch(e){}</script>
 <script>
@@ -337,13 +337,13 @@ async function showOffline(note=""){const main=$("#offlineStatus"),detail=$("#of
   catch(e){main.textContent=note||"Tare could not read its offline storage.";detail.textContent=`home screen: ${installed?"yes":"no"} · error: ${e?.name||"Error"}: ${e?.message||""}`}}
 async function prepareOffline(){const main=$("#offlineStatus");if(main)main.textContent="Saving Tare to this phone.";try{swError="";const reg=await navigator.serviceWorker.register("sw.js",{updateViaCache:"none"});await reg.update();await Promise.race([navigator.serviceWorker.ready,new Promise((_,j)=>setTimeout(()=>j(new Error("worker timed out")),12000))]);await new Promise(r=>setTimeout(r,1200));await showOffline(navigator.serviceWorker.controller?"":"Saved. Fully close and reopen Tare once to finish.")}catch(e){swError=`${e?.name||"Error"}: ${e?.message||""}`;await showOffline("Tare could not be saved for offline use.")}}
 function trendsView(){const e=estimate(),trend=latestTrend(),conf=e.conf>=.7?"High confidence":e.conf>=.3?"Building confidence":"Starting estimate",w=e.rate*7;
-  return`<section class="card stats">${coachingOff()?`<div class="stat"><span>Days logged</span><b>${Object.keys(S.days).filter(d=>peek(d).foods.length).length}</b><span>all time</span></div>`:`<div class="stat"><span>Expenditure</span><b>${fmt(e.tdee)}</b><span>${conf}</span></div>`}<div class="stat"><span>Trend weight</span><b>${weights().length?toUser(trend).toFixed(1):"–"}</b><span>${unit()}</span></div><div class="stat"><span>Weekly change</span><b>${e.conf?signed(toUser(w),2):"–"}</b><span>${unit()} per week</span></div><div class="stat"><span>Average intake</span><b>${e.n?fmt(e.avg):"–"}</b><span>${e.n} logged days</span></div></section>
+  return`<h1 class="sr-only">Trends</h1><section class="card stats">${coachingOff()?`<div class="stat"><span>Days logged</span><b>${Object.keys(S.days).filter(d=>peek(d).foods.length).length}</b><span>all time</span></div>`:`<div class="stat"><span>Expenditure</span><b>${fmt(e.tdee)}</b><span>${conf}</span></div>`}<div class="stat"><span>Trend weight</span><b>${weights().length?toUser(trend).toFixed(1):"–"}</b><span>${unit()}</span></div><div class="stat"><span>Weekly change</span><b>${e.conf?signed(toUser(w),2):"–"}</b><span>${unit()} per week</span></div><div class="stat"><span>Average intake</span><b>${e.n?fmt(e.avg):"–"}</b><span>${e.n} logged days</span></div></section>
   <div class="seg" style="justify-self:start" role="group" aria-label="Chart range">${[[14,"2 weeks"],[42,"6 weeks"],[90,"3 months"],[365,"1 year"]].map(r=>`<button data-act="range" data-r="${r[0]}" aria-pressed="${range===r[0]}">${r[1]}</button>`).join("")}</div>
   <section class="card"><div class="charthead"><h2>Weight</h2><div class="legend"><span><i style="background:var(--muted);height:6px;width:6px;border-radius:50%"></i>Scale</span><span><i style="background:var(--accent)"></i>Trend</span></div></div><div class="readout" id="r1">Hover or tap the chart for daily values</div><div class="chart" id="c1"></div></section>
   <section class="card"><div class="charthead"><h2>${coachingOff()?"Calories":"Calories in and expenditure"}</h2><div class="legend"><span><i style="background:var(--bar);height:9px"></i>Intake</span>${coachingOff()?"":`<span><i style="background:var(--protein)"></i>Expenditure</span>`}</div></div><div class="readout" id="r2">Hover or tap the chart for daily values</div><div class="chart" id="c2"></div></section>`}
 function opt(v,l,cur){return`<option value="${v}" ${String(v)===String(cur)?"selected":""}>${l}</option>`}
 function planView(){const p=setup?{unit:"lb",sex:"m",age:"",heightCm:"",activity:1.55,goal:-.5,protein:1.8}:{activity:1.55,goal:-.5,protein:1.8,sex:"m",...S.profile},u=p.unit==="kg"?"kg":"lb",h=p.heightCm?(u==="kg"?Math.round(p.heightCm):(p.heightCm/2.54).toFixed(1)):"",off=!setup&&coachingOff(),kg=setup||(off&&!weights().length)?"":toUser(latestTrend()).toFixed(1),e=estimate(),g=S.profile.plan;
-  return`<div class="grid">${targetsPanel(g,e,setup)}
+  return`<h1 class="sr-only">Plan</h1><div class="grid">${targetsPanel(g,e,setup)}
   <div class="stack"><form class="card form" data-form="plan"><h2 class="full">${setup?"Set up your plan":"Your plan"}</h2>
   <label class="full">How do you want to use Tare?<select id="coachSwitch" name="coaching">${opt("on","Coaching and macro tracking",off?"off":"on")}${opt("off","Macro tracking only",off?"off":"on")}</select></label>
   <label>Units<select id="unit" name="unit">${opt("lb","Pounds, inches",u)}${opt("kg","Kilograms, cm",u)}</select></label><label class="coachOnly">Calorie formula<select id="sex" name="sex">${opt("m","Male",p.sex)}${opt("f","Female",p.sex)}</select></label>
@@ -370,9 +370,9 @@ function drawCharts(){const dates=chartDates(),W=Math.max(280,$("#c1").clientWid
 
 /* Add-food dialog */
 function recent(){const seen=new Set(),o=[];Object.keys(S.days).sort().reverse().some(d=>{for(const e of S.days[d].foods){if(!seen.has(e.name)&&e.qty){seen.add(e.name);o.push({name:e.name,serv:e.serv,kcal:e.kcal/e.qty,p:e.p/e.qty,c:e.c/e.qty,f:e.f/e.qty})}}return o.length>=8});return o}
-function openAdd(meal,tab="search"){M={meal,tab,q:"",sel:null,scan:{state:"idle"}};renderDlg();$("#dlg").showModal();if(tab==="scan")startScan();else $("#q")?.focus()}
+function openAdd(meal,tab="search"){M={meal,tab,q:"",sel:null,scan:{state:"idle"}};renderDlg();$("#dlg").showModal();fitAddTabs();if(tab==="scan")startScan();else $("#q")?.focus()}
 function matches(){const q=M.q.trim().toLowerCase();if(!q)return[...smartFoods(M.meal),...S.custom,...FOODS.slice(0,12)].filter((f,i,a)=>a.findIndex(x=>foodKey(x)===foodKey(f))===i).slice(0,24);return rankFoods(q)}
-function resultsHTML(){const list=matches();M.list=list;return list.length?list.map((f,i)=>`<button type="button" class="result" data-act="pick" data-i="${i}" aria-selected="${M.sel===f}"><span class="fooditem">${foodIcon(f.name)}<span><b>${highlightName(f.name)}</b><small>${esc(f.serv)} · ${Math.round(f.p)}P ${Math.round(f.c)}C ${Math.round(f.f)}F</small></span></span><span class="mono">${fmt(f.kcal)}</span></button>`).join(""):`<p class="muted" style="padding:10px;margin:0">No match. Try Scan or Custom.</p>`}
+function resultsHTML(){const list=matches();M.list=list;return list.length?list.map((f,i)=>`<button type="button" class="result" data-act="pick" data-i="${i}" aria-pressed="${M.sel===f}"><span class="fooditem">${foodIcon(f.name)}<span><b>${highlightName(f.name)}</b><small>${esc(f.serv)} · ${Math.round(f.p)}P ${Math.round(f.c)}C ${Math.round(f.f)}F</small></span></span><span class="mono">${fmt(f.kcal)}</span></button>`).join(""):`<p class="muted" style="padding:10px;margin:0">No match. Try Scan or Custom.</p>`}
 function chooserHTML(){if(!M.sel)return"";if(M.sel.db)return dbChooserHTML(M.sel);return servChooserHTML(M.sel)}
 function updateQty(){const el=$("#qtyInfo");if(!el||!M.sel)return;if(M.sel.db)return updateDbAmount();const q=selServings(),f=M.sel;el.innerHTML=servAmountInfo(f,q);setMicroPanel("#microInfo",f.n,q)}
 function renderDlg(){const tab=M.tab;let body="";
@@ -472,7 +472,7 @@ document.addEventListener("click",async ev=>{const b=ev.target.closest("[data-ac
   if(a==="close"){$("#dlg").close();render()}
   if(a==="tab"&&b.dataset.t!==M.tab){stopScan();M.tab=b.dataset.t;renderDlg();if(M.tab==="scan"&&!["found","missing"].includes(M.scan.state))startScan();if(M.tab==="describe")$("#ptext")?.focus()}
   if(a==="rescan")startScan();
-  if(a==="pick"){M.sel=M.list[+b.dataset.i];$("#res").querySelectorAll(".result").forEach((r,i)=>r.setAttribute("aria-selected",i===+b.dataset.i));$("#chooser").innerHTML=chooserHTML();updateQty();$("#qty").focus();$("#qty").select()}
+  if(a==="pick"){M.sel=M.list[+b.dataset.i];$("#res").querySelectorAll(".result").forEach((r,i)=>r.setAttribute("aria-pressed",i===+b.dataset.i));$("#chooser").innerHTML=chooserHTML();updateQty();$("#qty").focus();$("#qty").select()}
   if(a==="addsel"){if(M.sel.db){if(addDbFood()){$("#dlg").close();render()}}else{const q=+selServings().toFixed(3);if(q>0){addEntry(M.sel,q);$("#dlg").close();render()}}}
   if(a==="reset"){confirmReset=true;render()}if(a==="resetno"){confirmReset=false;render()}
   if(a==="resetyes"){try{localStorage.removeItem("tare");indexedDB.deleteDatabase("tare-photos")}catch(e){setSave("Could not delete your data.");return}clearSessionData();confirmReset=false;seedDemo();cursor=today();view="log";setSave("Example data");render()}
@@ -504,7 +504,9 @@ addEventListener("pagehide",()=>stopScan());
 // iPhone Duo's outer display keeps the clock and every app's controls in a side rail, which iOS reports as a wide side safe area.
 // When it is there, Tare moves its tabs and its back, forward, and close buttons into the rail like a Duo app.
 let railWidth=0;
-function syncRail(){const probe=document.createElement("div");probe.style.cssText="position:fixed;visibility:hidden;pointer-events:none;padding-left:var(--safe-left);padding-right:var(--safe-right)";document.body.append(probe);const cs=getComputedStyle(probe),l=parseFloat(cs.paddingLeft)||0,r=parseFloat(cs.paddingRight)||0;probe.remove();const side=r>=70?"right":l>=70?"left":"",root=document.documentElement;railWidth=side==="right"?r:side==="left"?l:0;if(side)root.dataset.rail=side;else delete root.dataset.rail}
+function syncRail(){const probe=document.createElement("div");probe.style.cssText="position:fixed;visibility:hidden;pointer-events:none;padding-left:var(--safe-left);padding-right:var(--safe-right)";document.body.append(probe);const cs=getComputedStyle(probe),l=parseFloat(cs.paddingLeft)||0,r=parseFloat(cs.paddingRight)||0;probe.remove();const side=r>=70?"right":l>=70?"left":"",root=document.documentElement;railWidth=side==="right"?r:side==="left"?l:0;if(side)root.dataset.rail=side;else delete root.dataset.rail;
+  // Layout follows the width left for content after the safe areas, not a particular screen size.
+  const content=root.clientWidth-Math.max(16,l)-Math.max(16,r);root.classList.toggle("narrow",content<=388);root.classList.toggle("small",content<=348);root.classList.toggle("tiny",content<=328);if(typeof fitAddTabs==="function")fitAddTabs()}
 const railText=()=>railWidth?` · side rail: ${document.documentElement.dataset.rail} ${Math.round(railWidth)}px`:"";
 function syncViewport(){const v=window.visualViewport;if(!v)return;const root=document.documentElement,s=root.style;s.setProperty("--app-h",Math.round(v.height)+"px");s.setProperty("--vv-top",Math.round(v.offsetTop)+"px");root.classList.toggle("short",v.height<480)}
 if(window.visualViewport){visualViewport.addEventListener("resize",syncViewport);visualViewport.addEventListener("scroll",syncViewport);addEventListener("orientationchange",syncViewport);syncViewport()}

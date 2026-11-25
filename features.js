@@ -1,5 +1,5 @@
 /* Tare feature module: coaching programs, recipes, label scanning, tracking, and insights. */
-window.TARE_FEATURES_BUILD = "21";
+window.TARE_FEATURES_BUILD = "22";
 // A page from an older release cannot safely run this code, so reload it into the matching version.
 if (window.TARE_BUILD !== window.TARE_FEATURES_BUILD && !window.repairTareBuild) {
   try {
@@ -95,11 +95,14 @@ function restoreBackup(x) {
     days[k] = { ...(Number(v.w) > 0 ? { w: safeNumber(v.w, 10, 700) } : {}), ...(v.skip === true ? { skip: true } : {}), ...cleanDayExtras(v), foods: v.foods.slice(0, 500).map(cleanEntry) };
   }
   const wasDemo = S.demo;
-  S = { demo: false, profile: cleanProfile(x.profile), days: wasDemo ? days : { ...S.days, ...days }, custom: Array.isArray(x.custom) ? cleanCustom(x.custom) : wasDemo ? [] : S.custom };
+  const restored = Array.isArray(x.custom) ? cleanCustom(x.custom) : [], foodId = f => f.barcode ? "b:" + f.barcode : "n:" + f.name;
+  const custom = wasDemo ? restored : [...restored, ...S.custom.filter(c => !restored.some(r => foodId(r) === foodId(c)))].slice(0, 300);
+  S = { demo: false, profile: cleanProfile(x.profile), days: wasDemo ? days : { ...S.days, ...days }, custom };
   clearSessionData();
   cursor = today();
   touchAll();
   render();
+  setSave(wasDemo ? "Backup restored" : "Backup restored. Its days replaced the same days here, and everything else was kept.");
 }
 function clearSessionData() {
   clearUndo(); clip = null; editing = null; servState = null; productCache.clear(); confirmPhoto = "";
@@ -112,7 +115,8 @@ let watchedDay = "";
 function syncToday() {
   const now = today();
   if (now === watchedDay) return;
-  if (cursor === watchedDay) cursor = now;
+  // An open add or edit sheet keeps logging to the day it was opened for.
+  if (cursor === watchedDay && !$("#dlg")?.open) cursor = now;
   watchedDay = now;
   if (!$("#dlg")?.open) render();
 }
@@ -648,6 +652,13 @@ function afterDlg() {
   fillLabelPrefill();
   initServing();
   updateEatInfo();
+  fitAddTabs();
+}
+// The six add methods sit in one row when they fit, and two rows of three when they do not.
+function fitAddTabs() {
+  const seg = $("#dlg .seg.addtabs"); if (!seg) return;
+  seg.classList.remove("rows");
+  if (seg.scrollWidth > seg.clientWidth + 1) seg.classList.add("rows");
 }
 function fillLabelPrefill() {
   if (M?.tab !== "custom" || !M.prefill) return;
@@ -724,7 +735,7 @@ function microsCard(x) {
   for (const e of foods) for (const k in e.n || {}) totals[k] = (totals[k] || 0) + num(e.n[k]);
   const keys = microsExpanded ? null : ["fiber", "sugar", "satfat", "sodium"];
   const note = !foods.length ? "Log food to see micronutrients." : !withData ? "None of today's foods include micronutrient data. Scanned products and labels usually do." : withData < foods.length ? `Based on ${withData} of ${foods.length} foods, so true totals may be higher.` : `Based on all ${foods.length} foods.`;
-  return `<section class="card microcard"><div class="mealtitle"><h3>Micronutrients</h3><button class="link" data-pro="microtoggle" aria-expanded="${microsExpanded}">${microsExpanded ? "Show less" : "Show all"}</button></div><div class="microlist">${microRows(totals, keys)}</div><p class="micronote">${esc(note)}</p></section>`;
+  return `<section class="card microcard"><div class="mealtitle"><h2>Micronutrients</h2><button class="link" data-pro="microtoggle" aria-expanded="${microsExpanded}">${microsExpanded ? "Show less" : "Show all"}</button></div><div class="microlist">${microRows(totals, keys)}</div><p class="micronote">${esc(note)}</p></section>`;
 }
 
 /* Manual macro goals */
@@ -789,7 +800,7 @@ function entryRow(e) {
 function flatFoodCard(x) {
   const foods = x.foods, sum = k => foods.reduce((a, e) => a + e[k], 0), meal = mealForNow();
   const paste = clip && clip.type !== "day" ? `<div class="mealtools"><button class="link" data-pro="pasteflat">Paste ${clip.items.length === 1 ? "food" : clip.items.length + " foods"}</button></div>` : "";
-  return `<section class="card mealcard"><div class="mealtitle"><div><h3>Food</h3><p>${foods.length ? `${fmt(sum("kcal"))} kcal · ${Math.round(sum("p"))}P ${Math.round(sum("c"))}C ${Math.round(sum("f"))}F` : "Nothing logged"}</p></div><div class="mealactions"><button class="iconbtn soft" data-act="add" data-meal="${meal}" data-tab="scan" aria-label="Scan food">${ICONS.scan}</button><button class="iconbtn add" data-act="add" data-meal="${meal}" aria-label="Add food">${ICONS.plus}</button></div></div>${byTime(foods).map(entryRow).join("")}${paste}</section>`;
+  return `<section class="card mealcard"><div class="mealtitle"><div><h2>Food</h2><p>${foods.length ? `${fmt(sum("kcal"))} kcal · ${Math.round(sum("p"))}P ${Math.round(sum("c"))}C ${Math.round(sum("f"))}F` : "Nothing logged"}</p></div><div class="mealactions"><button class="iconbtn soft" data-act="add" data-meal="${meal}" data-tab="scan" aria-label="Scan food">${ICONS.scan}</button><button class="iconbtn add" data-act="add" data-meal="${meal}" aria-label="Add food">${ICONS.plus}</button></div></div>${byTime(foods).map(entryRow).join("")}${paste}</section>`;
 }
 function logLayoutCard() {
   return `<section class="card stack"><h2>Log layout</h2><label style="display:flex;align-items:center;gap:10px"><input id="hideMeals" type="checkbox" ${mealsOff() ? "checked" : ""}>Use one food list instead of meals</label><p class="muted" style="margin:0;font-size:13px">Breakfast, Lunch, Dinner, and Snacks will be hidden. Turn this off anytime to bring them back with your foods still sorted.</p><label style="display:flex;align-items:center;gap:10px"><input id="showFasting" type="checkbox" ${fastingOn() ? "checked" : ""}>Show the fasting timer on Log</label></section>`;
@@ -811,7 +822,7 @@ function logView() {
   <div class="dash-log">${tools ? `<div class="daytools">${tools}</div>` : ""}
   ${mealsOff() ? flatFoodCard(x) : MEALS.map(m => {
     const es = x.foods.filter(e => e.meal === m), sum = k => es.reduce((a, e) => a + e[k], 0);
-    return `<section class="card mealcard"><div class="mealtitle"><div><h3>${m}</h3><p>${es.length ? `${fmt(sum("kcal"))} kcal · ${Math.round(sum("p"))}P ${Math.round(sum("c"))}C ${Math.round(sum("f"))}F` : "Nothing logged"}</p></div><div class="mealactions"><button class="iconbtn soft" data-act="add" data-meal="${m}" data-tab="scan" aria-label="Scan food for ${m}">${ICONS.scan}</button><button class="iconbtn add" data-act="add" data-meal="${m}" aria-label="Add food to ${m}">${ICONS.plus}</button></div></div>
+    return `<section class="card mealcard"><div class="mealtitle"><div><h2>${m}</h2><p>${es.length ? `${fmt(sum("kcal"))} kcal · ${Math.round(sum("p"))}P ${Math.round(sum("c"))}C ${Math.round(sum("f"))}F` : "Nothing logged"}</p></div><div class="mealactions"><button class="iconbtn soft" data-act="add" data-meal="${m}" data-tab="scan" aria-label="Scan food for ${m}">${ICONS.scan}</button><button class="iconbtn add" data-act="add" data-meal="${m}" aria-label="Add food to ${m}">${ICONS.plus}</button></div></div>
     ${byTime(es).map(entryRow).join("")}${mealTools(m, es)}</section>`;
   }).join("")}
   ${coachingOff() ? "" : `<label class="card skipcard"><input id="skip" type="checkbox" data-change="skip" ${x.skip ? "checked" : ""}>Leave this incomplete day out of my expenditure estimate</label>`}</div></div>`;
@@ -979,12 +990,12 @@ function insightsView() {
   const heatStart = add(today(), -parse(today()).getDay() - 28), last35 = Array.from({ length: 35 }, (_, i) => add(heatStart, i)), logs28 = Array.from({ length: 28 }, (_, i) => add(today(), -i)), logPct = Math.round(logs28.filter(logged).length / 28 * 100), weighPct = Math.round(logs28.filter(weighed).length / 28 * 100);
   const keys = [["kcal", "Calories", "kcal"], ["p", "Protein", "g"], ["c", "Carbs", "g"], ["f", "Fat", "g"], ...MICROS.map(m => [m.k, m.label, m.u])], cur = keys.find(k => k[0] === contributor) || keys[0], top = contributors(days, cur[0]), eta = goalEta();
   const micro = MICROS.map(m => { const vals = foods.filter(e => e.n?.[m.k] != null), sum = vals.reduce((a, e) => a + e.n[m.k], 0); return { ...m, avg: days.length ? sum / days.length : 0, count: vals.length }; });
-  return `<div class="seg" style="justify-self:start" role="group" aria-label="Insight range">${[[7, "7 days"], [30, "30 days"], [90, "90 days"], ["all", "All"]].map(r => `<button data-pro="irange" data-r="${r[0]}" aria-pressed="${insightRange === r[0]}">${r[1]}</button>`).join("")}</div>
+  return `<h1 class="sr-only">Insights</h1><div class="seg" style="justify-self:start" role="group" aria-label="Insight range">${[[7, "7 days"], [30, "30 days"], [90, "90 days"], ["all", "All"]].map(r => `<button data-pro="irange" data-r="${r[0]}" aria-pressed="${insightRange === r[0]}">${r[1]}</button>`).join("")}</div>
   <section class="card stats"><div class="stat"><span>Logging streak</span><b>${streak(logged)}</b><span>days</span></div><div class="stat"><span>Weigh-in streak</span><b>${streak(weighed)}</b><span>days</span></div><div class="stat"><span>Food logged</span><b>${logPct}%</b><span>last 28 days</span></div><div class="stat"><span>Weighed in</span><b>${weighPct}%</b><span>last 28 days</span></div></section>
   ${eta ? `<section class="card"><h2>Goal</h2><p class="muted" style="margin:6px 0 0">${esc(eta)}</p></section>` : ""}
   ${habitsCard(days)}
   <div class="grid2"><section class="card stack"><h2>Consistency</h2><div class="heat heathead" aria-hidden="true">${DAY_NAMES.map(n => `<b>${n[0]}</b>`).join("")}</div><div class="heat" role="img" aria-label="Logging and weigh-in consistency for the last five weeks">${last35.map(d => `<i title="${esc(short(d))}" class="${d > today() ? "future" : logged(d) && weighed(d) ? "both" : logged(d) ? "log" : weighed(d) ? "wgh" : ""}${d === today() ? " today" : ""}"></i>`).join("")}</div><div class="legend"><span><i class="key both"></i>Food and weight</span><span><i class="key log"></i>Food</span><span><i class="key wgh"></i>Weight</span></div></section>
-  <section class="card stack"><h2>Nutrition averages</h2><div style="overflow-x:auto"><table class="tbl"><thead><tr><th></th><th>kcal</th><th>P</th><th>C</th><th>F</th></tr></thead><tbody>${ave.map(([l, a]) => `<tr><th>${l}</th>${a ? `<td>${fmt(a.kcal)}</td><td>${Math.round(a.p)}</td><td>${Math.round(a.c)}</td><td>${Math.round(a.f)}</td>` : `<td colspan="4" class="muted">No logged days</td>`}</tr>`).join("")}</tbody></table></div></section>
+  <section class="card stack"><h2>Nutrition averages</h2><div style="overflow-x:auto"><table class="tbl"><thead><tr><th><span class="sr-only">Period</span></th><th>kcal</th><th>P</th><th>C</th><th>F</th></tr></thead><tbody>${ave.map(([l, a]) => `<tr><th>${l}</th>${a ? `<td>${fmt(a.kcal)}</td><td>${Math.round(a.p)}</td><td>${Math.round(a.c)}</td><td>${Math.round(a.f)}</td>` : `<td colspan="4" class="muted">No logged days</td>`}</tr>`).join("")}</tbody></table></div></section>
   ${timingCard(foods, mealK, allK)}
   <section class="card stack"><div class="mealhead"><h2>Top contributors</h2><select id="contrib" aria-label="Nutrient" style="width:auto;max-width:55%">${keys.map(k => opt(k[0], k[1], contributor)).join("")}</select></div>${top.length ? top.map(t => `<div><div class="mealhead"><span style="min-width:0;overflow-wrap:anywhere">${esc(t.name)}</span><span class="mono">${Math.round(t.pct)}%</span></div><div class="bar"><i style="width:${t.pct}%;background:var(--protein)"></i></div></div>`).join("") : `<p class="muted" style="margin:0">No logged foods have this nutrient yet.</p>`}</section></div>
   ${periodCard()}
@@ -1197,12 +1208,12 @@ function fastCard() {
   const history = recent.length ? `<div class="fastlog">${recent.map(x => `<div><span>${esc(duration(x.e - x.s))}</span><span class="muted">ended ${esc(whenLabel(x.e))}</span><button class="iconbtn quiet" data-pro="fastdel" data-s="${x.s}" aria-label="Remove this fast">${ICONS.close}</button></div>`).join("")}</div>` : "";
   if (f.start) {
     const ran = now - f.start, pct = clamp(ran / (goal * HOUR) * 100, 0, 100), done = ran >= goal * HOUR;
-    return `<section class="card fastcard" id="fastCard"><div class="mealtitle"><div><h3>Fasting</h3><p>${done ? "Goal reached" : `${esc(duration(goal * HOUR - ran))} to go`}</p></div><button class="btn small primary" data-pro="faststop">End fast</button></div>
+    return `<section class="card fastcard" id="fastCard"><div class="mealtitle"><div><h2>Fasting</h2><p>${done ? "Goal reached" : `${esc(duration(goal * HOUR - ran))} to go`}</p></div><button class="btn small primary" data-pro="faststop">End fast</button></div>
     <div class="fasttime"><b>${esc(duration(ran))}</b><span class="fastof"><span class="muted">of</span>${goalSelect(true)}</span></div><div class="bar"><i style="width:${pct}%;background:var(${done ? "--carbs" : "--ink"})"></i></div>
     <div class="fastrow"><label class="faststart">Started<input id="fastStartAt" type="datetime-local" max="${localInput(now)}" value="${localInput(f.start)}"></label></div>${history}</section>`;
   }
   const last = lastMealMs();
-  return `<section class="card fastcard" id="fastCard"><div class="mealtitle"><div><h3>Fasting</h3><p>${!last ? "Not fasting" : now - last < 6e4 ? "Last food just now" : `Last food ${esc(duration(now - last))} ago`}</p></div><button class="btn small" data-pro="faststart">Start now</button></div>
+  return `<section class="card fastcard" id="fastCard"><div class="mealtitle"><div><h2>Fasting</h2><p>${!last ? "Not fasting" : now - last < 6e4 ? "Last food just now" : `Last food ${esc(duration(now - last))} ago`}</p></div><button class="btn small" data-pro="faststart">Start now</button></div>
   <div class="fastrow">${last && now - last >= 10 * 6e4 ? `<button class="btn small" data-pro="faststart" data-from="meal">Start from last food</button>` : ""}${goalSelect(false)}</div>${history}</section>`;
 }
 function refreshFastCard() { const el = $("#fastCard"); if (el && !$("#fastStartAt:focus") && !$("#fastGoal:focus")) el.outerHTML = fastCard(); }
