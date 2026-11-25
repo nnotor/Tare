@@ -1,5 +1,5 @@
 /* Tare feature module: coaching programs, recipes, label scanning, tracking, and insights. */
-window.TARE_FEATURES_BUILD = "19";
+window.TARE_FEATURES_BUILD = "20";
 // A page from an older release cannot safely run this code, so reload it into the matching version.
 if (window.TARE_BUILD !== window.TARE_FEATURES_BUILD && !window.repairTareBuild) {
   try {
@@ -499,7 +499,7 @@ function dbGrams() {
 }
 function updateDbAmount() {
   const f = M.sel, factor = Math.max(0, dbGrams()) / 100, el = $("#qtyInfo");
-  if (el) el.textContent = `${BY_NUTRIENT.some(b => b[0] === $("#qtyUnit")?.value) ? `${Math.round(factor * 100)} g · ` : ""}${fmt(f.kcal * factor)} kcal · ${Math.round(f.p * factor)}P ${Math.round(f.c * factor)}C ${Math.round(f.f * factor)}F`;
+  if (el) el.innerHTML = `${$("#qtyUnit")?.value !== "g" ? `<b class="weighout">${weightText(factor * 100, "g")}</b> · ` : ""}${fmt(f.kcal * factor)} kcal · ${Math.round(f.p * factor)}P ${Math.round(f.c * factor)}C ${Math.round(f.f * factor)}F`;
   setMicroPanel("#microInfo", f.n, factor);
 }
 function addDbFood() {
@@ -629,9 +629,24 @@ function scaledMicros(n) {
   if (!n) return n;
   return servState?.origG > 0 && servState.curG > 0 ? scaleN(n, servState.curG / servState.origG) : n;
 }
+// On the scan form, calories to eat set the servings eaten, even after the serving size or calories change.
+function syncEat() {
+  const per = num($("#sk")?.value), want = num($("#seat")?.value);
+  if (per > 0 && want > 0 && $("#sqty")) $("#sqty").value = +(want / per).toFixed(3);
+  updateEatInfo();
+}
+// Total weight and calories for the servings entered on the scan form.
+function updateEatInfo() {
+  const el = $("#seatInfo"); if (!el) return;
+  const q = num($("#sqty")?.value), per = num($("#sk")?.value), amt = num($("#servAmt")?.value), u = $("#servUnit")?.value;
+  if (!(q > 0)) { el.textContent = ""; return; }
+  const weight = amt > 0 && u ? weightText(q * amt * (u === "oz" ? SERVING_UNITS.oz : 1), u === "ml" ? "ml" : "g") : "";
+  el.innerHTML = `${weight ? `<b class="weighout">${esc(weight)}</b> · ` : ""}${+q.toFixed(2)} ${q === 1 ? "serving" : "servings"}${per > 0 ? ` · ${fmt(per * q)} kcal` : ""}${!weight && num($("#seat")?.value) > 0 ? ". Add the serving size in g or ml to see the weight." : ""}`;
+}
 function afterDlg() {
   fillLabelPrefill();
   initServing();
+  updateEatInfo();
 }
 function fillLabelPrefill() {
   if (M?.tab !== "custom" || !M.prefill) return;
@@ -1068,6 +1083,8 @@ document.addEventListener("input", ev => {
   if (t.id === "rateAmt" || t.id === "kg") syncRateRow();
   if (t.id === "servAmt") applyServingAmount();
   if (t.dataset.servMacro && servState) readServingBase();
+  if (t.id === "sqty" && $("#seat")) $("#seat").value = "";
+  if ($("#seatInfo")) syncEat();
   if ($("#editTotal")) updateEditTotal();
   if ($("#formMicro")) refreshFormMicros();
   if ($("#gKcal")) updateGoalTotal();
@@ -1093,7 +1110,8 @@ document.addEventListener("keydown", ev => {
 document.addEventListener("change", ev => {
   const t = ev.target;
   if (t.id === "qtyUnit") { changeQtyUnit(t); updateQty(); }
-  if (t.id === "servUnit") { changeServingUnit(t); refreshFormMicros(); }
+  if (t.id === "servUnit") { changeServingUnit(t); refreshFormMicros(); updateEatInfo(); }
+  if (t.id === "sbasis") { syncEat(); refreshFormMicros(); }
   if (t.id === "hideMeals") { S.profile.hideMeals = t.checked; touch(); }
   if (t.id === "coachSwitch") syncCoachFields();
   if (t.id === "goal") { syncRateRow(); if (!$("#rateRow").hidden && !$("#rateAmt").value) $("#rateAmt").focus(); }
@@ -1378,6 +1396,7 @@ const UNIT_RE = [
   ["floz", /^(fl\.?\s*oz|fluid ounces?)\b\.?/], ["kg", /^(kgs?|kilos?|kilograms?)\b\.?/], ["g", /^(g|gr|grams?|grammes?)\b\.?/],
   ["oz", /^(oz|ounces?)\b\.?/], ["lb", /^(lbs?|pounds?)\b\.?/], ["ml", /^(ml|milliliters?|millilitres?)\b\.?/], ["l", /^(l|liters?|litres?)\b\.?/],
   ["cup", /^(cups?|c)\b\.?/], ["tbsp", /^(tbsps?|tbs|tbl|tablespoons?)\b\.?/], ["tsp", /^(tsps?|teaspoons?)\b\.?/], ["glass", /^(glass|glasses)\b/],
+  ["kcal", /^(kcals?|cals?|calories|calorie)\b\.?/],
   ["count", /^(slices?|pieces?|pcs|scoops?|servings?|cans?|bars?|bottles?|bowls?|plates?|handfuls?|cloves?|sticks?|packets?|packs?|containers?|cartons?|pats?|links?|patty|patties|fillets?|wedges?|strips?)\b/]
 ];
 const PREP_WORDS = /\b(chopped|diced|minced|sliced|thinly|finely|roughly|coarsely|beaten|whisked|sifted|drained|rinsed|toasted lightly|divided|softened|melted|cubed|shredded|peeled|seeded|trimmed|packed|heaping|level|room temperature|at room temperature|to taste|optional|for garnish|for serving|plus more|or more|as needed|about|around|approximately|roughly|some|like)\b/g;
@@ -1408,6 +1427,7 @@ function takeUnit(s) {
 // Turns an amount and unit into grams, milliliters, or a count.
 function quantityFrom(n, unitHit) {
   if (!unitHit) return { n };
+  if (unitHit.u === "kcal") return { n, kcal: n };
   if (WEIGHT_G[unitHit.u]) return { n, g: n * WEIGHT_G[unitHit.u] };
   if (VOLUME_ML[unitHit.u]) return { n, ml: n * VOLUME_ML[unitHit.u], vol: unitHit.u };
   return { n, cw: unitHit.word };
@@ -1490,6 +1510,7 @@ function servingShape(text, grams) {
 // Returns grams for USDA foods or servings for other foods, and whether the conversion is reliable.
 function convertAmount(f, q) {
   const n = q.n ?? 1, given = q.n != null;
+  if (q.kcal) return f.kcal > 0 ? { amt: f.db ? q.kcal / f.kcal * 100 : q.kcal / f.kcal, sure: true } : { amt: 0, sure: false };
   if (f.db) {
     const p = f.portion && f.portionGrams ? servingShape(f.portion, f.portionGrams) : null;
     if (q.g) return { amt: q.g, sure: true };
@@ -1552,7 +1573,7 @@ function refreshParsed() { const box = $("#plist"); if (box) box.innerHTML = par
 function parseState(target) { if (!M.parse || M.parse.target !== target) M.parse = { target, text: "", items: [], msg: "" }; return M.parse; }
 function describeBody() {
   const P = parseState("log");
-  return `<p class="muted" style="margin:0">Type what you ate, or use your keyboard's microphone to say it. Separate foods with commas or “and”.</p><textarea id="ptext" rows="3" placeholder="2 eggs, 1 slice whole wheat toast with butter, black coffee" aria-label="Describe what you ate" autocapitalize="none" spellcheck="false" enterkeyhint="done">${esc(P.text)}</textarea><div id="plist" class="stack" style="gap:10px">${parsedListHTML()}</div><p class="muted" style="margin:0;font-size:12px">Matching runs on this phone using Tare's foods and your saved foods. Review each match before adding.</p>`;
+  return `<p class="muted" style="margin:0">Type what you ate, or use your keyboard's microphone to say it. Separate foods with commas or “and”. Amounts can be calories, like “300 calories of rice”.</p><textarea id="ptext" rows="3" placeholder="2 eggs, 300 calories of rice, black coffee" aria-label="Describe what you ate" autocapitalize="none" spellcheck="false" enterkeyhint="done">${esc(P.text)}</textarea><div id="plist" class="stack" style="gap:10px">${parsedListHTML()}</div><p class="muted" style="margin:0;font-size:12px">Matching runs on this phone using Tare's foods and your saved foods. Review each match before adding.</p>`;
 }
 function recipeImportHTML() {
   const P = parseState("recipe");
@@ -1612,14 +1633,31 @@ function splitLoggedRecipe() {
 /* Log by calories or macros: enter how much of a nutrient you want and Tare works out the amount */
 const BY_NUTRIENT = [["kcal", "calories"], ["p", "g protein"], ["c", "g carbs"], ["f", "g fat"]];
 const nutrientOptions = (f, per) => BY_NUTRIENT.filter(([k]) => num(f[k]) * per > 0).map(([k, l]) => `<option value="${k}">${l}</option>`).join("");
+// The weight of one serving when its text gives one, such as "1 scoop (30 g)" or "240 ml". Drinks in ounces are fluid ounces.
+function servingWeight(f) {
+  if (!f || f.db) return null;
+  const w = parseServing(f.serv); if (!w) return null;
+  if (w.unit === "ml") return { amt: w.amt, unit: "ml" };
+  if (w.unit === "oz") return densityGuess(f.name) >= 1 ? { amt: w.amt * 29.5735, unit: "ml" } : { amt: w.amt * SERVING_UNITS.oz, unit: "g" };
+  return { amt: w.amt, unit: "g" };
+}
+const weightText = (v, u) => `${v >= 10 ? fmt(v) : +v.toFixed(1)} ${u}`;
+function servAmountInfo(f, q) {
+  const u = $("#qtyUnit")?.value || "serv", sw = servingWeight(f), parts = [];
+  if (u !== "serv" && u !== "w" && sw) parts.push(`<b class="weighout">${weightText(q * sw.amt, sw.unit)}</b>`);
+  if (u !== "serv") parts.push(`${+q.toFixed(2)} × ${esc(f.serv)}`);
+  parts.push(`${fmt(f.kcal * q)} kcal · ${Math.round(f.p * q)}P ${Math.round(f.c * q)}C ${Math.round(f.f * q)}F`);
+  return parts.join(" · ");
+}
 function servChooserHTML(f) {
-  const keep = $("#qtyUnit")?.value === "serv", q = keep ? Math.max(0, num($("#qty")?.value, 1)) || 1 : 1;
-  return `<div class="dbamount"><label>Amount<input id="qty" type="number" inputmode="decimal" min="0.01" step="any" value="${q}" aria-label="Amount"></label><label>Unit<select id="qtyUnit" aria-label="Unit" data-prev="serv"><option value="serv">× ${esc(f.serv)}</option>${nutrientOptions(f, 1)}</select></label></div><div class="chooser dbchoice"><span><b>${esc(f.name)}</b><br><span class="muted mono" id="qtyInfo"></span></span><button class="btn primary" data-act="addsel">Add</button></div>${(f.items?.length || (f.serv === "1 serving" && savedRecipe(f.name))) ? `<div><button type="button" class="link" data-pro="explode">Log as separate ingredients</button></div>` : ""}<div id="microInfo"></div>`;
+  const keep = $("#qtyUnit")?.value === "serv", q = keep ? Math.max(0, num($("#qty")?.value, 1)) || 1 : 1, sw = servingWeight(f);
+  return `<div class="dbamount"><label>Amount<input id="qty" type="number" inputmode="decimal" min="0.01" step="any" value="${q}" aria-label="Amount"></label><label>Unit<select id="qtyUnit" aria-label="Unit" data-prev="serv"><option value="serv">× ${esc(f.serv)}</option>${sw ? `<option value="w">${sw.unit === "ml" ? "ml" : "grams"}</option>` : ""}${nutrientOptions(f, 1)}</select></label></div><div class="chooser dbchoice"><span><b>${esc(f.name)}</b><br><span class="muted mono" id="qtyInfo"></span></span><button class="btn primary" data-act="addsel">Add</button></div>${(f.items?.length || (f.serv === "1 serving" && savedRecipe(f.name))) ? `<div><button type="button" class="link" data-pro="explode">Log as separate ingredients</button></div>` : ""}<div id="microInfo"></div>`;
 }
 // Servings of a regular food, or grams of a USDA food, from the amount and unit chosen.
 function selServings() {
   const f = M.sel, a = num($("#qty")?.value), u = $("#qtyUnit")?.value || "serv";
   if (BY_NUTRIENT.some(b => b[0] === u)) return num(f[u]) > 0 ? a / num(f[u]) : 0;
+  if (u === "w") { const sw = servingWeight(f); return sw ? a / sw.amt : 0; }
   return a;
 }
 function unitAmount(f, unitName, grams) {
@@ -1635,9 +1673,9 @@ function changeQtyUnit(sel) {
     const v = unitAmount(f, sel.value, grams > 0 ? grams : 100);
     qty.value = sel.value === "kcal" ? Math.round(v) : +v.toFixed(sel.value === "portion" ? 2 : 1);
   } else {
-    const servings = BY_NUTRIENT.some(b => b[0] === before) ? (num(f[before]) > 0 ? a / num(f[before]) : 1) : a || 1;
-    const v = sel.value === "serv" ? servings : servings * num(f[sel.value]);
-    qty.value = sel.value === "kcal" ? Math.round(v) : +v.toFixed(sel.value === "serv" ? 2 : 1);
+    const sw = servingWeight(f), per = u => u === "serv" ? 1 : u === "w" ? (sw ? sw.amt : 0) : num(f[u]);
+    const servings = per(before) > 0 ? a / per(before) || 1 : 1, v = servings * per(sel.value);
+    qty.value = sel.value === "kcal" || (sel.value === "w" && v >= 10) ? Math.round(v) : +v.toFixed(sel.value === "serv" ? 2 : 1);
   }
   sel.dataset.prev = sel.value;
 }

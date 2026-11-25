@@ -412,3 +412,6 @@ textarea { display: block; width: 100%; min-width: 0; font: inherit; line-height
 .tbl.tight th, .tbl.tight td { padding-inline: 4px; }
 .tbl.tight th:first-child { padding-left: 0; }
 .tbl.tight th:last-child, .tbl.tight td:last-child { padding-right: 0; }
+
+/* The weight to eat when an amount is entered as calories or macros */
+.weighout { color: var(--ink); font-weight: 750; }

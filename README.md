@@ -38,7 +38,7 @@ Everything is free. There are no subscriptions, paywalls, or accounts.
 - Build recipes, add custom foods, and remember corrected barcode values
 - Import a recipe's ingredients by pasting the list from a website or photographing a cookbook page
 - Log a recipe as separate ingredients, or split a logged recipe, to change it for one meal without changing the saved recipe
-- Log by calories or macros: enter 40 g of protein or 300 calories and Tare works out the amount
+- Log by calories or macros: enter 300 calories or 40 g of protein and Tare shows how many grams (or ml) to eat whenever the food's weight is known, in search, on scanned products, and in phrases like "300 calories of rice"
 - Quick add calories or macros without naming a food
 - Change a serving in g, ml, or oz and automatically rescale its nutrition
 - See a small icon for each food, such as grain for oats or a milk carton for whey protein
