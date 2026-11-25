@@ -1,5 +1,5 @@
 /* Tare feature module: coaching programs, recipes, label scanning, tracking, and insights. */
-window.TARE_FEATURES_BUILD = "20";
+window.TARE_FEATURES_BUILD = "21";
 // A page from an older release cannot safely run this code, so reload it into the matching version.
 if (window.TARE_BUILD !== window.TARE_FEATURES_BUILD && !window.repairTareBuild) {
   try {
@@ -207,7 +207,7 @@ function goalField(p, refKg, unitName) {
   const g = num(p.goal, -.5), preset = GOAL_PRESETS.some(o => o[0] === g), kind = preset ? String(g) : g < 0 ? "lose" : "gain";
   const amt = !preset && refKg > 0 ? (unitName === "kg" ? Math.abs(g) / 100 * refKg : Math.abs(g) / 100 * refKg * LB).toFixed(2) : "";
   return `<label class="coachOnly">Goal<select id="goal" name="goal">${GOAL_PRESETS.map(o => opt(o[0], o[1], kind)).join("")}${opt("lose", "Lose a custom amount", kind)}${opt("gain", "Gain a custom amount", kind)}</select></label>
-  <label id="rateRow" ${preset ? "hidden" : ""}>Amount per week (<span id="ru">${unitName}</span>)<input id="rateAmt" name="rateAmt" type="number" inputmode="decimal" step="0.05" min="0.05" max="10" value="${amt}" ${preset ? "disabled" : ""}></label>
+  <label id="rateRow" ${preset ? "hidden" : ""}>Amount per week (<span id="ru">${unitName}</span>)<input id="rateAmt" name="rateAmt" type="number" inputmode="decimal" step="any" min="0.05" max="10" value="${amt}" ${preset ? "disabled" : ""}></label>
   <p class="muted full" id="rateHint" style="margin:0;font-size:13px" ${preset ? "hidden" : ""}></p>`;
 }
 // The custom amount is stored as a share of body weight, like the presets, so it scales as weight changes.
@@ -301,11 +301,11 @@ function planExtras() {
   return `<form class="card form" data-form="coach"><h2 class="full">Macro program</h2>
   <label>Coaching mode<select id="pmode" name="mode">${opt("coached", "Coached", mode)}${opt("collab", "Collaborative", mode)}${opt("manual", "Manual", mode)}</select></label>
   <label>Diet style<select id="pdiet" name="diet">${opt("balanced", "Balanced", p.diet || "balanced")}${opt("lowcarb", "Low-carb", p.diet)}${opt("keto", "Keto", p.diet)}${opt("carb", "Carb-focused", p.diet)}</select></label>
-  <label class="full">${p.goal === 0 ? `Weight to maintain (${unit()})` : `Goal weight (${unit()}, optional)`}<input id="pgoal" name="goalWeight" type="number" inputmode="decimal" step="0.1" min="20" max="1000" value="${p.goalKg ? toUser(p.goalKg).toFixed(1) : ""}"></label>
+  <label class="full">${p.goal === 0 ? `Weight to maintain (${unit()})` : `Goal weight (${unit()}, optional)`}<input id="pgoal" name="goalWeight" type="number" inputmode="decimal" step="any" min="20" max="1000" value="${p.goalKg ? toUser(p.goalKg).toFixed(1) : ""}"></label>
   ${eta ? `<p class="muted full" style="margin:0">${esc(eta)}</p>` : ""}
   ${p.goal === 0 ? `<p class="muted full" style="margin:0;font-size:13px">Dynamic maintenance keeps your intake at your expenditure while your trend stays within ${toUser(MAINT_BAND_KG).toFixed(1)} ${unit()} of this weight. Outside that range, it adds a small deficit or surplus until you are back.</p>` : ""}
   <div class="full"><label style="display:flex;align-items:center;gap:10px;color:var(--ink)"><input id="ppredict" name="predictive" type="checkbox" ${p.predictive ? "checked" : ""}>Expenditure modifier: predict goal changes</label><p class="muted" style="margin:6px 0 0;font-size:13px">${esc(predictiveNote())}</p></div>
-  <label class="full" id="nudgeRow" ${mode === "collab" ? "" : "hidden"}>Adjust coach's calories (-300 to +300)<input id="pnudge" name="nudge" type="number" step="10" min="-300" max="300" value="${num(p.nudge)}"></label>
+  <label class="full" id="nudgeRow" ${mode === "collab" ? "" : "hidden"}>Adjust coach's calories (-300 to +300)<input id="pnudge" name="nudge" type="number" step="any" min="-300" max="300" value="${num(p.nudge)}"></label>
   <div class="full form" id="manualRow" ${mode === "manual" ? "" : "hidden"}><label class="half">Calories<input id="mk" name="mk" type="number" min="800" max="8000" value="${m.kcal}" ${mode === "manual" ? "" : "disabled"}></label><label class="half">Protein (g)<input id="mp" name="mp" type="number" min="0" max="500" value="${m.p}" ${mode === "manual" ? "" : "disabled"}></label><label class="half">Carbs (g)<input id="mc" name="mc" type="number" min="0" max="1000" value="${m.c}" ${mode === "manual" ? "" : "disabled"}></label><label class="half">Fat (g)<input id="mf" name="mf" type="number" min="0" max="400" value="${m.f}" ${mode === "manual" ? "" : "disabled"}></label></div>
   <div class="full"><b style="font-size:13px">Weekly day types</b><div class="weekgrid">${DAY_NAMES.map((d, i) => `<label>${d}<select id="wk${i}" name="wk${i}">${Object.entries(DAY_TYPES).map(([k, v]) => opt(k, v[0], week[i])).join("")}</select></label>`).join("")}</div><p class="muted" style="margin:6px 0 0;font-size:13px">High, low, and fasting days keep your weekly calorie average the same. Tare allows up to 2 fasting days per week.</p></div>
   <p class="err full" id="coachErr" hidden></p><div class="full"><button class="btn primary">Save program</button></div></form>`;
@@ -424,7 +424,8 @@ function smartFoods(meal, limit = 10) {
     const age = between(d, now);
     if (age < 0 || age > 120) continue;
     for (const e of S.days[d].foods || []) {
-      if (!e.qty) continue;
+      // Unnamed quick adds are one-off numbers, not a food to suggest again.
+      if (!e.qty || e.name === "Quick add") continue;
       const hit = score.get(e.name) || { s: 0, f: { name: e.name, serv: e.serv, kcal: e.kcal / e.qty, p: e.p / e.qty, c: e.c / e.qty, f: e.f / e.qty, ...(e.n ? { n: scaleN(e.n, 1 / e.qty) } : {}) } };
       hit.s += (e.meal === meal ? 3 : 1) * Math.exp(-age / 21);
       score.set(e.name, hit);
@@ -666,7 +667,7 @@ function recipeResults(r) {
 }
 function recipeBody() {
   const r = M.recipe || (M.recipe = { name: "", servings: 4, q: "", items: [] }), t = recipeTotals(r), s = Math.max(.1, num(r.servings, 1));
-  return `<div class="form recipehead"><label>Recipe name<input id="rname" maxlength="70" value="${esc(r.name)}" placeholder="Turkey chili"></label><label>Servings made<input id="rserv" type="number" inputmode="decimal" min="0.5" step="0.5" value="${esc(r.servings)}"></label></div>
+  return `<div class="form recipehead"><label>Recipe name<input id="rname" maxlength="70" value="${esc(r.name)}" placeholder="Turkey chili"></label><label>Servings made<input id="rserv" type="number" inputmode="decimal" min="0.5" step="any" value="${esc(r.servings)}"></label></div>
   ${recipeImportHTML()}
   <input id="rq" type="search" placeholder="Add an ingredient" aria-label="Add an ingredient" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" value="${esc(r.q)}">
   <div id="rRes">${recipeResults(r)}</div>
@@ -733,9 +734,9 @@ function openGoals() {
   $("#dlg").setAttribute("aria-label", "Macro goals");
   const value = v => g.kcal ? v : "";
   $("#dlg").innerHTML = `<div class="dlgwrap"><div class="dlghead"><div class="mealhead"><h2>Macro goals</h2></div>${closeButton()}</div><div class="dlgbody"><form class="form" data-form="goals">
-  <div class="full trio"><label>Protein (g)<input id="gp" name="p" type="number" inputmode="numeric" min="0" max="500" step="1" required value="${value(g.p)}"></label>
-  <label>Carbs (g)<input id="gc" name="c" type="number" inputmode="numeric" min="0" max="1000" step="1" required value="${value(g.c)}"></label>
-  <label>Fat (g)<input id="gf" name="f" type="number" inputmode="numeric" min="0" max="400" step="1" required value="${value(g.f)}"></label></div>
+  <div class="full trio"><label>Protein (g)<input id="gp" name="p" type="number" inputmode="numeric" min="0" max="500" step="any" required value="${value(g.p)}"></label>
+  <label>Carbs (g)<input id="gc" name="c" type="number" inputmode="numeric" min="0" max="1000" step="any" required value="${value(g.c)}"></label>
+  <label>Fat (g)<input id="gf" name="f" type="number" inputmode="numeric" min="0" max="400" step="any" required value="${value(g.f)}"></label></div>
   <div class="goaltotal full"><span>Daily calories</span><b id="gKcal">0</b></div>
   ${off || manual ? "" : `<p class="warn full" style="margin:0">Saving switches coaching to Manual, so weekly check-ins will stop changing your targets. You can return to the coach here anytime.</p>`}
   <p class="err full" id="goalErr" hidden></p>
@@ -806,7 +807,7 @@ function logView() {
     ${g.kcal ? `<div class="calstats"><div><b>${fmt(t.kcal)}</b><span>Eaten</span></div><div><b>${fmt(g.kcal)}</b><span>${esc(dayLabel(cursor))}</span></div></div>` : ""}
     <div class="macros">${macroColumn("Protein", t.p, g.p, "--protein")}${macroColumn("Carbs", t.c, g.c, "--carbs")}${macroColumn("Fat", t.f, g.f, "--fat")}</div>
   </section>
-  <section class="card weighcard"><form class="weigh" data-form="weight"><div><b>Weight</b><span>${hasWeight ? `Trend ${toUser(latestTrend(cursor)).toFixed(1)} ${unit()}` : `Log in ${unit()}`}</span></div><input id="w" name="w" type="number" inputmode="decimal" step="0.1" min="20" max="1000" aria-label="Weight in ${unit()}" value="${x.w ? toUser(x.w).toFixed(1) : ""}" placeholder="0.0"><button class="btn small">Save</button></form></section>${fastingOn() ? fastCard() : ""}${microsCard(x)}</div>
+  <section class="card weighcard"><form class="weigh" data-form="weight"><div><b>Weight</b><span>${hasWeight ? `Trend ${toUser(latestTrend(cursor)).toFixed(1)} ${unit()}` : `Log in ${unit()}`}</span></div><input id="w" name="w" type="number" inputmode="decimal" step="any" min="20" max="1000" aria-label="Weight in ${unit()}" value="${x.w ? toUser(x.w).toFixed(1) : ""}" placeholder="0.0"><button class="btn small">Save</button></form></section>${fastingOn() ? fastCard() : ""}${microsCard(x)}</div>
   <div class="dash-log">${tools ? `<div class="daytools">${tools}</div>` : ""}
   ${mealsOff() ? flatFoodCard(x) : MEALS.map(m => {
     const es = x.foods.filter(e => e.meal === m), sum = k => es.reduce((a, e) => a + e[k], 0);
@@ -936,7 +937,7 @@ function trackView() {
   const x = peek(cursor), m = x.m || {};
   return `${dateHeader(1, "day")}
   <div class="grid2"><form class="card form" data-form="track"><h2 class="full">Body measurements</h2>
-  ${MEASURES.map(([k, l]) => { const prev = latestMeasure(k, cursor), delta = m[k] && prev ? lenUser(m[k] - prev.v) : null; return `<label class="half">${l} (${lenUnit()})${delta != null && Math.abs(delta) >= .05 ? ` <span class="muted" style="font-weight:400">${signed(delta, 1)}</span>` : ""}<input id="tm-${k}" name="m-${k}" type="number" inputmode="decimal" step="0.1" min="1" max="400" value="${m[k] ? lenUser(m[k]).toFixed(1) : ""}"></label>`; }).join("")}
+  ${MEASURES.map(([k, l]) => { const prev = latestMeasure(k, cursor), delta = m[k] && prev ? lenUser(m[k] - prev.v) : null; return `<label class="half">${l} (${lenUnit()})${delta != null && Math.abs(delta) >= .05 ? ` <span class="muted" style="font-weight:400">${signed(delta, 1)}</span>` : ""}<input id="tm-${k}" name="m-${k}" type="number" inputmode="decimal" step="any" min="1" max="400" value="${m[k] ? lenUser(m[k]).toFixed(1) : ""}"></label>`; }).join("")}
   <div class="full"><button class="btn primary">Save</button></div></form>
   <section class="card stack"><h2>Period</h2><label style="display:flex;align-items:center;gap:8px"><input id="tperiod" data-pro-change="period" type="checkbox" style="width:auto" ${x.period ? "checked" : ""}>Period on this day</label><p class="muted" style="margin:0">${esc(cycleInfo())}</p></section></div>
   <section class="card stack"><div class="mealhead"><h2>Progress photos</h2><label class="btn small filebtn" for="progressPhoto">Add photo</label><input id="progressPhoto" type="file" accept="image/*" hidden></div><p class="muted" style="margin:0;font-size:13px">Photos stay on this device and are not included in backup files.</p><div class="photogrid" id="photoGrid"><p class="muted" style="margin:0">Loading photos.</p></div></section>`;
@@ -1570,7 +1571,8 @@ function parsedListHTML() {
   return `<div class="plist">${P.items.map(parseRowHTML).join("")}</div><p class="mono muted" id="pTotal" style="margin:0">${s.n} ${s.n === 1 ? "food" : "foods"} · ${s.text}</p><div><button type="button" class="btn primary" data-pro="padd" ${s.n ? "" : "disabled"}>${recipe ? `Add ${s.n} to recipe` : `Add ${s.n} ${s.n === 1 ? "food" : "foods"}`}</button></div>`;
 }
 function refreshParsed() { const box = $("#plist"); if (box) box.innerHTML = parsedListHTML(); }
-function parseState(target) { if (!M.parse || M.parse.target !== target) M.parse = { target, text: "", items: [], msg: "" }; return M.parse; }
+// Describe and recipe import each keep their own text while the add sheet is open.
+function parseState(target) { const all = M.parses || (M.parses = {}); M.parse = all[target] || (all[target] = { target, text: "", items: [], msg: "" }); return M.parse; }
 function describeBody() {
   const P = parseState("log");
   return `<p class="muted" style="margin:0">Type what you ate, or use your keyboard's microphone to say it. Separate foods with commas or “and”. Amounts can be calories, like “300 calories of rice”.</p><textarea id="ptext" rows="3" placeholder="2 eggs, 300 calories of rice, black coffee" aria-label="Describe what you ate" autocapitalize="none" spellcheck="false" enterkeyhint="done">${esc(P.text)}</textarea><div id="plist" class="stack" style="gap:10px">${parsedListHTML()}</div><p class="muted" style="margin:0;font-size:12px">Matching runs on this phone using Tare's foods and your saved foods. Review each match before adding.</p>`;
@@ -1585,7 +1587,7 @@ function addParsed() {
   if (!items.length) return;
   if (P.target === "recipe") {
     for (const it of items) { const f = it.alts[it.ai]; M.recipe.items.push({ food: f, qty: f.db ? +(it.amt / 100).toFixed(3) : it.amt }); }
-    M.parse = { target: "recipe", text: "", items: [], msg: "", open: false }; renderDlg(); return;
+    M.parse = M.parses.recipe = { target: "recipe", text: "", items: [], msg: "", open: false }; renderDlg(); return;
   }
   for (const it of items) { const f = it.alts[it.ai]; if (f.db) addEntry({ name: f.name, serv: `${it.amt} g`, kcal: f.kcal * it.amt / 100, p: f.p * it.amt / 100, c: f.c * it.amt / 100, f: f.f * it.amt / 100, ...(f.n ? { n: scaleN(f.n, it.amt / 100) } : {}) }, 1); else addEntry(f, it.amt); }
   $("#dlg").close(); render(); setSave(`Added ${items.length} ${items.length === 1 ? "food" : "foods"}`);
