@@ -379,3 +379,36 @@ html[data-rail] #toast { bottom: calc(16px + var(--safe-bottom)); }
   html[data-rail] .chooser.dbchoice { grid-template-columns: minmax(0, 1fr) auto; }
   html[data-rail] .chooser.dbchoice .btn { grid-column: auto; }
 }
+
+/* Describe a meal and recipe import */
+textarea { display: block; width: 100%; min-width: 0; font: inherit; line-height: 1.4; resize: vertical; }
+.plist { display: grid; background: var(--panel); border-radius: var(--radius-sm); }
+.pitem { display: grid; gap: 6px; padding: 11px 12px; border-bottom: 1px solid var(--line); min-width: 0; }
+.pitem:last-child { border-bottom: 0; }
+.ptext { color: var(--faint); font-size: 12px; overflow-wrap: anywhere; }
+.prow { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.prow select { flex: 1 1 auto; min-width: 0; text-overflow: ellipsis; }
+.prow input { flex: 0 0 92px; width: 92px; text-align: right; }
+.punit { flex: 1 1 auto; min-width: 0; color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pkcal { flex: none; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pmiss { flex: 1 1 auto; color: var(--muted); font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
+.pwarn { color: var(--warn); font-size: 12px; }
+.rimport { background: var(--panel); }
+.rimport textarea { background: var(--raised) !important; }
+.rimport .plist { background: var(--raised); }
+.rimport .plist select, .rimport .plist input { background: var(--panel) !important; }
+
+/* Habit and period averages */
+.habits { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 420px) { .habits { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Six add methods sit in two rows of three on phones instead of hiding the last ones off screen */
+@media (max-width: 520px) {
+  .seg.addtabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; }
+  .seg.addtabs button { padding-inline: 4px; }
+}
+.cardhead { flex-wrap: wrap; row-gap: 8px; }
+.tbl th small { display: block; margin-top: 1px; color: var(--faint); font-size: 11px; font-weight: 500; }
+.tbl.tight th, .tbl.tight td { padding-inline: 4px; }
+.tbl.tight th:first-child { padding-left: 0; }
+.tbl.tight th:last-child, .tbl.tight td:last-child { padding-right: 0; }
