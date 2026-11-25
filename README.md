@@ -15,23 +15,31 @@ Everything is free. There are no subscriptions, paywalls, or accounts.
 - Estimates daily expenditure from your logged food and weight trend over the last 28 days
 - Starts with the Mifflin-St Jeor formula, then shifts toward your real data as you log
 - Offers updated calorie, protein, carb, and fat targets at a weekly check-in
+- Bases each adjustment on what you actually ate and weighed, so a week of missed targets does not skew it
 - Includes Coached, Collaborative, and Manual program modes
 - Lets you set your own protein, carb, and fat goals from the Log screen
 - Lets you turn coaching off and use Tare only for macro tracking, with or without your own targets
 - Supports balanced, low-carb, keto, and carb-focused plans
 - Sets high, low, normal, and fasting days while keeping your weekly average
-- Supports goals from losing 1% to gaining 0.5% of body weight per week
-- Estimates when you will reach a goal weight
+- Supports goals from losing 1.5% to gaining 1% of body weight per week, from presets or a custom amount per week
+- Estimates when you will reach a goal weight, and offers to switch to maintenance when you get there
+- Dynamic maintenance keeps intake at your expenditure while your trend stays within about 1.5 lb (0.7 kg) of the weight you want to hold, and adds a small deficit or surplus when it drifts outside that range
+- An optional expenditure modifier phases in the change in expenditure that usually follows a new goal, about 4% for each 1% per week, over two weeks, before the scale shows it
 - Lets you leave incomplete days out of the estimate
 
 ### Fast food logging
 
+- Describe a meal in plain words, such as "2 eggs, toast with butter, black coffee", or dictate it with your keyboard's microphone, then review the matched foods and amounts before logging
 - Scan EAN-13, EAN-8, UPC-A, and UPC-E barcodes with the live camera or a photo
 - Look up new products through Open Food Facts and review the values before logging
 - Read Nutrition Facts labels from a photo on your device
 - Search more than 7,500 USDA foods on your device, even offline or on a VPN
 - Get typo-tolerant autocomplete and smart suggestions based on what you usually eat at each meal
 - Build recipes, add custom foods, and remember corrected barcode values
+- Import a recipe's ingredients by pasting the list from a website or photographing a cookbook page
+- Log a recipe as separate ingredients, or split a logged recipe, to change it for one meal without changing the saved recipe
+- Log by calories or macros: enter 40 g of protein or 300 calories and Tare works out the amount
+- Quick add calories or macros without naming a food
 - Change a serving in g, ml, or oz and automatically rescale its nutrition
 - See a small icon for each food, such as grain for oats or a milk carton for whey protein
 - Record the time of each food automatically, and change it when you log something later
@@ -47,8 +55,9 @@ Everything is free. There are no subscriptions, paywalls, or accounts.
 - Review weekly weight change and average intake
 - View ranges from 2 weeks to 1 year
 - Track logging and weigh-in streaks
-- Compare 7-day, 30-day, and all-time nutrition averages
-- See top food contributors and calorie timing by meal
+- Compare 7-day, 30-day, and all-time nutrition averages, plus weekly and monthly averages with trend weight change
+- See how often you land within 10% of your calorie target and meet your protein target
+- See top food contributors and calorie timing by meal or by time of day
 - Review micronutrients on the Log screen and while adding foods, when food data includes them
 - Find foods high in protein, fiber, potassium, calcium, iron, vitamin C, or vitamin D, ranked per calorie or per 100 g, and log one with a tap
 
@@ -103,12 +112,12 @@ Some requests still leave your device:
 | Service | When it is used | What it receives |
 | --- | --- | --- |
 | GitHub Pages | Loading or updating the app | Standard connection details, such as IP address and browser type |
-| jsDelivr | Downloading the barcode or label reader | Standard connection details |
+| jsDelivr | Downloading the barcode reader, or the text reader for labels and recipe photos | Standard connection details |
 | Open Food Facts | Looking up a new barcode | The barcode number and standard connection details |
 
-Food search runs on your device, so what you type is not sent to any service.
+Food search and meal descriptions are matched on your device, so what you type is not sent to any service.
 
-Camera images, label photos, and progress photos are processed on your device and are not uploaded by Tare.
+Camera images, label photos, recipe photos, and progress photos are processed on your device and are not uploaded by Tare.
 
 ## Back up your data
 
@@ -116,7 +125,9 @@ Because your log exists only on your device, clearing browser data or removing t
 
 ## How the estimate works
 
-Tare compares your average logged intake with the slope of your weight over the last 28 days, counting each kilogram of change as about 7,700 kcal. It needs at least 7 logged days and 4 weigh-ins across a week before it starts using your data, and its confidence grows as you log more.
+Tare compares your average logged intake with the slope of your weight over the last 28 days, counting each kilogram of change as about 7,700 kcal. It needs at least 7 logged days and 4 weigh-ins across a week before it starts using your data, and its confidence grows as you log more, reaching full confidence after about three weeks of steady logging.
+
+With the expenditure modifier on, a goal change also shifts the estimate by about 4% for each 1% per week of change, phased in over two weeks. The part of the estimate that comes from your data already reflects some of that shift as new days arrive, so Tare adds only the part your data has not caught up to yet.
 
 Accurate food logging and regular weigh-ins produce the best estimates.
 

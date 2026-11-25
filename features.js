@@ -1,5 +1,5 @@
 /* Tare feature module: coaching programs, recipes, label scanning, tracking, and insights. */
-window.TARE_FEATURES_BUILD = "17";
+window.TARE_FEATURES_BUILD = "18";
 // A page from an older release cannot safely run this code, so reload it into the matching version.
 if (window.TARE_BUILD !== window.TARE_FEATURES_BUILD && !window.repairTareBuild) {
   try {
@@ -49,7 +49,7 @@ function cleanPlan(plan) {
 function cleanProfile(raw) {
   const x = raw && typeof raw === "object" ? raw : {}, modes = ["coached", "collab", "manual", "off"], out = {
     unit: oneOf(x.unit, ["lb", "kg"], "lb"), sex: oneOf(x.sex, ["m", "f"], "m"),
-    activity: oneOf(Number(x.activity), [1.2, 1.375, 1.55, 1.725, 1.9], 1.55), goal: oneOf(Number(x.goal), [-1, -.75, -.5, -.25, 0, .25, .5], -.5), protein: oneOf(Number(x.protein), [1.6, 1.8, 2.2], 1.8),
+    activity: oneOf(Number(x.activity), [1.2, 1.375, 1.55, 1.725, 1.9], 1.55), goal: cleanGoal(x.goal), protein: oneOf(Number(x.protein), [1.6, 1.8, 2.2], 1.8),
     plan: cleanPlan(x.plan), nudge: safeNumber(x.nudge, -300, 300), diet: oneOf(x.diet, ["balanced", "lowcarb", "keto", "carb"], "balanced"), useTargets: x.useTargets === true, hideMeals: x.hideMeals === true
   };
   if (Number(x.age) > 0) out.age = safeNumber(x.age, 1, 120);
@@ -63,6 +63,10 @@ function cleanProfile(raw) {
   const week = safeWeek(x.week); if (week) out.week = week;
   if (isDateKey(x.lastBackup)) out.lastBackup = x.lastBackup;
   if (x.hideFasting === true) out.hideFasting = true;
+  if (x.predictive === true) out.predictive = true;
+  if (Number(x.goalPromptOff) > 0) out.goalPromptOff = Number(x.goalPromptOff);
+  if (Number(x.goalSetKg) > 0) out.goalSetKg = safeNumber(x.goalSetKg, 10, 700);
+  if (Array.isArray(x.goalLog)) out.goalLog = x.goalLog.filter(g => g && isDateKey(g.on) && Number.isFinite(Number(g.d))).slice(-40).map(g => ({ on: g.on, d: +clamp(Number(g.d), -3, 3).toFixed(3), ...(g.r ? { r: 1 } : {}) }));
   const fasting = cleanFasting(x.fasting); if (fasting) out.fasting = fasting;
   if (Array.isArray(x.planHistory)) out.planHistory = x.planHistory.filter(h => h && (h.from === "0000-00-00" || isDateKey(h.from))).slice(-400).map(h => { const { kcal, p, c, f } = cleanPlan(h); return { from: h.from, kcal, p, c, f, week: safeWeek(h.week) || null }; });
   return out;
@@ -71,8 +75,13 @@ function cleanCustom(list) {
   if (!Array.isArray(list)) return [];
   return list.filter(f => f && typeof f === "object" && String(f.name || "").trim()).slice(0, 300).map(f => {
     const n = cleanN(f.n), barcode = String(f.barcode || "").replace(/\D/g, "").slice(0, 14);
-    return { name: String(f.name).trim().slice(0, 100), serv: String(f.serv || "1 serving").slice(0, 50), kcal: safeNumber(f.kcal, 0, 10000), p: safeNumber(f.p, 0, 1000), c: safeNumber(f.c, 0, 2000), f: safeNumber(f.f, 0, 1000), ...(barcode ? { barcode } : {}), ...(f.recipe === true ? { recipe: true } : {}), ...(n ? { n } : {}) };
+    const items = f.recipe === true && Array.isArray(f.items) ? f.items.filter(i => i && i.food && String(i.food.name || "").trim() && num(i.qty) > 0).slice(0, 80).map(i => ({ food: cleanIngredient(i.food), qty: safeNumber(i.qty, .001, 1000, 1) })) : [];
+    return { name: String(f.name).trim().slice(0, 100), serv: String(f.serv || "1 serving").slice(0, 50), kcal: safeNumber(f.kcal, 0, 10000), p: safeNumber(f.p, 0, 1000), c: safeNumber(f.c, 0, 2000), f: safeNumber(f.f, 0, 1000), ...(barcode ? { barcode } : {}), ...(f.recipe === true ? { recipe: true } : {}), ...(n ? { n } : {}), ...(items.length ? { items, servings: safeNumber(f.servings, .1, 1000, 1) } : {}) };
   });
+}
+function cleanIngredient(f) {
+  const n = cleanN(f.n);
+  return { name: String(f.name).trim().slice(0, 100), serv: String(f.serv || "1 serving").slice(0, 50), kcal: safeNumber(f.kcal, 0, 10000), p: safeNumber(f.p, 0, 1000), c: safeNumber(f.c, 0, 2000), f: safeNumber(f.f, 0, 1000), ...(n ? { n } : {}), ...(f.db === true ? { db: true } : {}) };
 }
 function cleanEntry(e) {
   const n = cleanN(e && e.n);
@@ -146,11 +155,12 @@ function syncCoachFields() {
   const off = sw.value === "off";
   document.querySelectorAll(".coachOnly").forEach(el => { el.hidden = off; el.querySelectorAll("input,select").forEach(i => { i.disabled = off; }); });
   const w = $("#kg"); if (w) { w.required = !off; w.placeholder = off ? "Optional" : ""; }
+  syncRateRow();
 }
 function targetsPanel(g, e, setupMode) {
   const off = !setupMode && coachingOff();
   if (off && !g.kcal) return `<section class="label"><h2>Tracking</h2><div class="cal"><div><b style="font:800 16px var(--display)">Coaching</b></div><b style="font-size:30px">Off</b></div><p class="muted" style="margin:9px 0 0;font-size:13px">Tare is recording calories and macros without daily targets. Add targets on this screen if you want them.</p></section>`;
-  return `<section class="label"><h2>Targets</h2><div class="cal"><div><b style="font:800 16px var(--display)">Calories</b></div><b>${fmt(g.kcal)}</b></div><div class="row"><b>Protein</b><span class="mono">${g.p} g</span></div><div class="row"><b>Carbs</b><span class="mono">${g.c} g</span></div><div class="row"><b>Fat</b><span class="mono">${g.f} g</span></div>${off ? "" : `<div class="row"><span>Expenditure</span><span class="mono">${fmt(e.tdee)} kcal</span></div>`}<p class="muted" style="margin:9px 0 0;font-size:13px">${off ? "Your own targets. Coaching is off, so Tare will not change them." : `Set ${esc(short(g.setOn))}. ${g.floored ? "Held at the minimum calorie floor. Consider a slower rate." : "Check-ins run every 7 days."}`}</p></section>`;
+  return `<section class="label"><h2>Targets</h2><div class="cal"><div><b style="font:800 16px var(--display)">Calories</b></div><b>${fmt(g.kcal)}</b></div><div class="row"><b>Protein</b><span class="mono">${g.p} g</span></div><div class="row"><b>Carbs</b><span class="mono">${g.c} g</span></div><div class="row"><b>Fat</b><span class="mono">${g.f} g</span></div>${off ? "" : `<div class="row"><span>Expenditure</span><span class="mono">${fmt(e.tdee)} kcal</span></div>`}${!off && !setupMode && S.profile?.goal === 0 && S.profile.mode !== "manual" && maintenanceNudge(latestTrend()) ? `<div class="row"><span>Maintenance correction</span><span class="mono">${signed(maintenanceNudge(latestTrend()), 0)} kcal</span></div>` : ""}<p class="muted" style="margin:9px 0 0;font-size:13px">${off ? "Your own targets. Coaching is off, so Tare will not change them." : `Set ${esc(short(g.setOn))}. ${g.floored ? "Held at the minimum calorie floor. Consider a slower rate." : "Check-ins run every 7 days."}`}</p></section>`;
 }
 function trackingTargets() {
   const p = S.profile, m = p.manual || { kcal: "", p: "", c: "", f: "" }, on = !!p.useTargets;
@@ -189,9 +199,94 @@ function dayPlan(date) {
   return { ...g, kcal, p: pr, c, f, type };
 }
 const dayLabel = date => { const t = dayPlan(date).type; return t === "normal" ? "Target" : `${DAY_TYPES[t][0]} day target`; };
+/* Weekly rate of change. Presets cover the usual choices, and a custom amount covers the rest. */
+const GOAL_PRESETS = [[-1, "Lose 1% per week"], [-.75, "Lose 0.75% per week"], [-.5, "Lose 0.5% per week"], [-.25, "Lose 0.25% per week"], [0, "Maintain"], [.25, "Gain 0.25% per week"], [.5, "Gain 0.5% per week"]];
+const GOAL_MIN = -1.5, GOAL_MAX = 1;
+const cleanGoal = v => Number.isFinite(Number(v)) && v !== null && v !== "" ? +clamp(Number(v), GOAL_MIN, GOAL_MAX).toFixed(3) : -.5;
+function goalField(p, refKg, unitName) {
+  const g = num(p.goal, -.5), preset = GOAL_PRESETS.some(o => o[0] === g), kind = preset ? String(g) : g < 0 ? "lose" : "gain";
+  const amt = !preset && refKg > 0 ? (unitName === "kg" ? Math.abs(g) / 100 * refKg : Math.abs(g) / 100 * refKg * LB).toFixed(2) : "";
+  return `<label class="coachOnly">Goal<select id="goal" name="goal">${GOAL_PRESETS.map(o => opt(o[0], o[1], kind)).join("")}${opt("lose", "Lose a custom amount", kind)}${opt("gain", "Gain a custom amount", kind)}</select></label>
+  <label id="rateRow" ${preset ? "hidden" : ""}>Amount per week (<span id="ru">${unitName}</span>)<input id="rateAmt" name="rateAmt" type="number" inputmode="decimal" step="0.05" min="0.05" max="10" value="${amt}" ${preset ? "disabled" : ""}></label>
+  <p class="muted full" id="rateHint" style="margin:0;font-size:13px" ${preset ? "hidden" : ""}></p>`;
+}
+// The custom amount is stored as a share of body weight, like the presets, so it scales as weight changes.
+function readGoal(d, kg) {
+  const v = String(d.get("goal") || "");
+  if (v !== "lose" && v !== "gain") return cleanGoal(v);
+  const amt = num(d.get("rateAmt")), u = d.get("unit") === "kg" ? "kg" : "lb", perKg = u === "kg" ? amt : amt / LB, ref = kg > 0 ? kg : latestTrend();
+  if (!(amt > 0) || !(ref > 0)) return v === "lose" ? -.5 : .25;
+  return cleanGoal((v === "lose" ? -1 : 1) * perKg / ref * 100);
+}
+function syncRateRow() {
+  const sel = $("#goal"), row = $("#rateRow"), hint = $("#rateHint"); if (!sel || !row) return;
+  const custom = sel.value === "lose" || sel.value === "gain", off = $("#coachSwitch")?.value === "off", show = custom && !off;
+  row.hidden = !show; $("#rateAmt").disabled = !show; hint.hidden = !show;
+  if (!show) return;
+  const u = $("#unit")?.value === "kg" ? "kg" : "lb", amt = num($("#rateAmt").value), w = num($("#kg")?.value), ref = w > 0 ? (u === "kg" ? w : w / LB) : latestTrend();
+  if (!(amt > 0) || !(ref > 0)) { hint.textContent = `Enter how many ${u} to ${sel.value} each week.`; return; }
+  const pct = (u === "kg" ? amt : amt / LB) / ref * 100, cap = sel.value === "lose" ? -GOAL_MIN : GOAL_MAX;
+  hint.textContent = pct > cap ? `That is ${pct.toFixed(2)}% of your weight per week. Tare caps this at ${cap}% per week (${(cap / 100 * ref * (u === "kg" ? 1 : LB)).toFixed(1)} ${u}).` : `About ${pct.toFixed(2)}% of your body weight per week.`;
+}
+
+/* Dynamic maintenance: hold intake near expenditure, and nudge it when the trend leaves a band around the weight to maintain */
+const MAINT_BAND_KG = .7;
+function maintenanceNudge(kg) {
+  const p = S.profile;
+  if (!p || p.goal !== 0 || !p.goalKg || !weights().length) return 0;
+  const drift = kg - p.goalKg;
+  if (Math.abs(drift) <= MAINT_BAND_KG) return 0;
+  // Close the gap over about four weeks, capped so the correction stays small.
+  return Math.round(clamp(-drift * KCAL_PER_KG / 28, -250, 250));
+}
+function maintenanceStatus() {
+  const p = S.profile, now = latestTrend(), drift = now - p.goalKg, band = toUser(MAINT_BAND_KG).toFixed(1), nudge = maintenanceNudge(now);
+  const range = `Maintaining ${toUser(p.goalKg).toFixed(1)} ${unit()}, give or take ${band}. Trend: ${toUser(now).toFixed(1)} ${unit()}.`;
+  if (!nudge) return `${range} You are inside the range, so targets match your expenditure.`;
+  return `${range} Your trend is ${drift > 0 ? "above" : "below"} the range, so targets include a small ${nudge < 0 ? "deficit" : "surplus"} of ${Math.abs(nudge)} kcal a day to bring it back.`;
+}
+// Goal changes are logged so the predictive modifier can phase them in. A switch to maintenance gets a weight to hold.
+function noteGoalChange(from, to, isSetup) {
+  const p = S.profile, start = isSetup || from == null ? 0 : num(from, 0), trend = latestTrend();
+  if (start !== to) { const log = p.goalLog || (p.goalLog = []); log.push({ on: today(), d: +(to - start).toFixed(3), ...(isSetup || from == null ? { r: 1 } : {}) }); p.goalLog = log.slice(-40); }
+  if (start !== to || isSetup) p.goalSetKg = +trend.toFixed(3);
+  if (to === 0 && (!p.goalKg || Math.abs(p.goalKg - trend) / trend > .05)) p.goalKg = +fromUser(+toUser(trend).toFixed(1)).toFixed(3);
+}
+function goalReached() {
+  const p = S.profile;
+  if (S.demo || !p || p.mode === "off" || p.mode === "manual" || !p.goalKg || !p.goal || p.goalPromptOff === p.goalKg || !weights().length) return false;
+  const t = latestTrend(), from = p.goalSetKg;
+  return p.goal < 0 ? t <= p.goalKg + .1 && (from == null || from > p.goalKg + .5) : t >= p.goalKg - .1 && (from == null || from < p.goalKg - .5);
+}
+function goalReachedNotice() {
+  return `<div class="notice"><span>You reached your goal weight of <b>${toUser(S.profile.goalKg).toFixed(1)} ${unit()}</b>. Switch to dynamic maintenance to hold it?</span><span class="btnrow"><button class="btn" data-pro="goalmaintain">Maintain this weight</button><button class="btn" data-pro="goalstay">Not now</button></span></div>`;
+}
+
+/* Expenditure modifier: after a goal change, expenditure usually moves before the scale shows it.
+   Each change is expected to shift expenditure by about 4% per 1% of weekly rate, phased in over 2 weeks.
+   The data-driven part of the estimate averages the last 28 days, so it already holds part of that shift;
+   only the part it has not seen yet is added. Once 28 days of post-change data exist, the data carries it. */
+const goalRamp = (g, t) => t < 0 ? 0 : g.r ? 1 : Math.min(1, t / 14);
+function predictiveShift(end, conf) {
+  const p = S.profile;
+  if (!p?.predictive || !p.goalLog?.length || p.mode === "off") return 0;
+  let s = 0;
+  for (const g of p.goalLog) {
+    const d = between(g.on, end); if (d < 0) continue;
+    let seen = 0; for (let t = d - 27; t <= d; t++) seen += goalRamp(g, t);
+    s += .04 * g.d * (goalRamp(g, d) - conf * seen / 28);
+  }
+  return clamp(s, -.12, .12);
+}
+function predictiveNote() {
+  const base = "Expenditure often shifts within two weeks of a new goal, before the scale shows it. With this on, Tare phases that shift in when you change your rate: about 4% for each 1% per week, fading as new data arrives.";
+  const e = estimate(), shift = e.shift || 0;
+  return Math.abs(shift) >= .001 ? `${base} Right now it is ${shift < 0 ? "lowering" : "raising"} your estimate by ${Math.abs(shift * 100).toFixed(1)}% (${signed(e.tdee - e.tdee / (1 + shift), 0)} kcal).` : base;
+}
 function goalEta() {
   const p = S.profile;
   if (p.mode === "off" || !p.goalKg) return "";
+  if (p.goal === 0) return weights().length ? maintenanceStatus() : "";
   const now = latestTrend(), gap = p.goalKg - now, e = estimate();
   if (Math.abs(gap) < .25) return "You are at your goal weight.";
   const perWeek = e.conf >= .3 ? e.rate * 7 : p.goal / 100 * now;
@@ -205,8 +300,10 @@ function planExtras() {
   return `<form class="card form" data-form="coach"><h2 class="full">Macro program</h2>
   <label>Coaching mode<select id="pmode" name="mode">${opt("coached", "Coached", mode)}${opt("collab", "Collaborative", mode)}${opt("manual", "Manual", mode)}</select></label>
   <label>Diet style<select id="pdiet" name="diet">${opt("balanced", "Balanced", p.diet || "balanced")}${opt("lowcarb", "Low-carb", p.diet)}${opt("keto", "Keto", p.diet)}${opt("carb", "Carb-focused", p.diet)}</select></label>
-  <label class="full">Goal weight (${unit()}, optional)<input id="pgoal" name="goalWeight" type="number" inputmode="decimal" step="0.1" min="20" max="1000" value="${p.goalKg ? toUser(p.goalKg).toFixed(1) : ""}"></label>
+  <label class="full">${p.goal === 0 ? `Weight to maintain (${unit()})` : `Goal weight (${unit()}, optional)`}<input id="pgoal" name="goalWeight" type="number" inputmode="decimal" step="0.1" min="20" max="1000" value="${p.goalKg ? toUser(p.goalKg).toFixed(1) : ""}"></label>
   ${eta ? `<p class="muted full" style="margin:0">${esc(eta)}</p>` : ""}
+  ${p.goal === 0 ? `<p class="muted full" style="margin:0;font-size:13px">Dynamic maintenance keeps your intake at your expenditure while your trend stays within ${toUser(MAINT_BAND_KG).toFixed(1)} ${unit()} of this weight. Outside that range, it adds a small deficit or surplus until you are back.</p>` : ""}
+  <div class="full"><label style="display:flex;align-items:center;gap:10px;color:var(--ink)"><input id="ppredict" name="predictive" type="checkbox" ${p.predictive ? "checked" : ""}>Expenditure modifier: predict goal changes</label><p class="muted" style="margin:6px 0 0;font-size:13px">${esc(predictiveNote())}</p></div>
   <label class="full" id="nudgeRow" ${mode === "collab" ? "" : "hidden"}>Adjust coach's calories (-300 to +300)<input id="pnudge" name="nudge" type="number" step="10" min="-300" max="300" value="${num(p.nudge)}"></label>
   <div class="full form" id="manualRow" ${mode === "manual" ? "" : "hidden"}><label class="half">Calories<input id="mk" name="mk" type="number" min="800" max="8000" value="${m.kcal}" ${mode === "manual" ? "" : "disabled"}></label><label class="half">Protein (g)<input id="mp" name="mp" type="number" min="0" max="500" value="${m.p}" ${mode === "manual" ? "" : "disabled"}></label><label class="half">Carbs (g)<input id="mc" name="mc" type="number" min="0" max="1000" value="${m.c}" ${mode === "manual" ? "" : "disabled"}></label><label class="half">Fat (g)<input id="mf" name="mf" type="number" min="0" max="400" value="${m.f}" ${mode === "manual" ? "" : "disabled"}></label></div>
   <div class="full"><b style="font-size:13px">Weekly day types</b><div class="weekgrid">${DAY_NAMES.map((d, i) => `<label>${d}<select id="wk${i}" name="wk${i}">${Object.entries(DAY_TYPES).map(([k, v]) => opt(k, v[0], week[i])).join("")}</select></label>`).join("")}</div><p class="muted" style="margin:6px 0 0;font-size:13px">High, low, and fasting days keep your weekly calorie average the same. Tare allows up to 2 fasting days per week.</p></div>
@@ -285,7 +382,8 @@ function scoreFood(name, q) {
   const score = matchScore(lower, tokens, stems, stems.join(" "), q, true);
   return score == null ? null : score - Math.min(lower.length, 40) / 10;
 }
-function rankFoods(query) {
+function rankFoods(query) { return rankFoodsScored(query).map(x => x.food); }
+function rankFoodsScored(query) {
   const q = searchQuery(query);
   if (!q.words.length) return [];
   const usual = smartFoods(M.meal, 60), boost = new Map(usual.map((f, i) => [f.name, 26 - Math.min(i, 20)])), seen = new Set(), ranked = [];
@@ -301,7 +399,7 @@ function rankFoods(query) {
     const food = dbFood(entry), key = `n:${food.name}|${food.serv}`;
     if (!seen.has(key)) { seen.add(key); ranked.push({ food, score: score + (boost.get(food.name) || 0) }); }
   }
-  return ranked.sort((a, b) => b.score - a.score || a.food.name.localeCompare(b.food.name)).slice(0, 30).map(x => x.food);
+  return ranked.sort((a, b) => b.score - a.score || a.food.name.localeCompare(b.food.name)).slice(0, 30);
 }
 const foodKey = f => f.barcode ? `b:${f.barcode}` : `n:${f.name}|${f.serv}`;
 function highlightName(name, query = M?.q) {
@@ -377,6 +475,7 @@ function adjustFoodScore(entry, score, q) {
   if (RESTAURANT_FOOD.test(entry.lower) && !RESTAURANT_FOOD.test(q.whole)) out -= 10;
   if (BRAND_NAME.test(entry.row[0])) out -= 10;
   if (odd && !q.whole.includes(odd[1])) out -= 8;
+  if (/mature seeds, raw/.test(entry.lower) && !/\b(raw|dry|dried|uncooked)\b/.test(q.whole)) out -= 14;
   return out;
 }
 function searchFoodDb(q) {
@@ -390,21 +489,22 @@ function searchFoodDb(q) {
   return found.sort((a, b) => b.score - a.score).slice(0, 40);
 }
 function dbChooserHTML(f) {
-  return `<div class="dbamount"><label>Amount<input id="qty" type="number" inputmode="decimal" min="0.01" step="any" value="100"></label><label>Unit<select id="qtyUnit"><option value="g">grams</option><option value="oz">ounces</option>${f.portion && f.portionGrams ? `<option value="portion">${esc(f.portion)} (${f.portionGrams} g)</option>` : ""}</select></label></div><div class="chooser dbchoice"><span><b>${esc(f.name)}</b><br><span class="muted mono" id="qtyInfo"></span></span><button class="btn primary" data-act="addsel">Add</button></div><div id="microInfo"></div>`;
+  return `<div class="dbamount"><label>Amount<input id="qty" type="number" inputmode="decimal" min="0.01" step="any" value="100"></label><label>Unit<select id="qtyUnit" data-prev="g"><option value="g">grams</option><option value="oz">ounces</option>${f.portion && f.portionGrams ? `<option value="portion">${esc(f.portion)} (${f.portionGrams} g)</option>` : ""}${nutrientOptions(f, 1)}</select></label></div><div class="chooser dbchoice"><span><b>${esc(f.name)}</b><br><span class="muted mono" id="qtyInfo"></span></span><button class="btn primary" data-act="addsel">Add</button></div><div id="microInfo"></div>`;
 }
 function dbGrams() {
   const amount = num($("#qty")?.value), unitName = $("#qtyUnit")?.value;
+  if (BY_NUTRIENT.some(b => b[0] === unitName)) return num(M.sel[unitName]) > 0 ? amount / num(M.sel[unitName]) * 100 : 0;
   return unitName === "oz" ? amount * SERVING_UNITS.oz : unitName === "portion" ? amount * M.sel.portionGrams : amount;
 }
 function updateDbAmount() {
   const f = M.sel, factor = Math.max(0, dbGrams()) / 100, el = $("#qtyInfo");
-  if (el) el.textContent = `${fmt(f.kcal * factor)} kcal · ${Math.round(f.p * factor)}P ${Math.round(f.c * factor)}C ${Math.round(f.f * factor)}F`;
+  if (el) el.textContent = `${BY_NUTRIENT.some(b => b[0] === $("#qtyUnit")?.value) ? `${Math.round(factor * 100)} g · ` : ""}${fmt(f.kcal * factor)} kcal · ${Math.round(f.p * factor)}P ${Math.round(f.c * factor)}C ${Math.round(f.f * factor)}F`;
   setMicroPanel("#microInfo", f.n, factor);
 }
 function addDbFood() {
   const f = M.sel, grams = dbGrams(), amount = num($("#qty").value), unitName = $("#qtyUnit").value;
   if (!(grams > 0)) return false;
-  const factor = grams / 100, shown = +amount.toFixed(2), serv = unitName === "portion" ? `${shown} × ${f.portion} (${+grams.toFixed(1)} g)` : `${shown} ${unitName}`;
+  const factor = grams / 100, shown = +amount.toFixed(2), serv = unitName === "portion" ? `${shown} × ${f.portion} (${+grams.toFixed(1)} g)` : unitName === "g" || unitName === "oz" ? `${shown} ${unitName}` : `${+grams.toFixed(1)} g`;
   addEntry({ name: f.name, serv, kcal: f.kcal * factor, p: f.p * factor, c: f.c * factor, f: f.f * factor, ...(f.n ? { n: scaleN(f.n, factor) } : {}) }, 1);
   return true;
 }
@@ -450,18 +550,20 @@ function labelBody() {
   const s = M.label || {};
   return `<p class="muted" style="margin:0">Take a straight, well-lit photo of the Nutrition Facts panel. Tare reads it on this phone and lets you review every value.</p><div><label class="btn primary filebtn" for="labelPhoto">Take label photo</label><input id="labelPhoto" type="file" accept="image/*" capture="environment" hidden></div>${s.msg ? `<p class="${s.err ? "err" : "muted"}" role="status" style="margin:0">${esc(s.msg)}</p>` : ""}`;
 }
+async function ocrText(file, onProgress) {
+  const T = await loadOCR();
+  const worker = await T.createWorker("eng", 1, { workerPath: OCR.worker, corePath: OCR.core, langPath: OCR.lang, logger: l => { if (l.status === "recognizing text") onProgress?.(l.progress); } });
+  try { const bitmap = await shrinkImage(file, 1800), { data } = await worker.recognize(bitmap); return data.text; }
+  finally { try { await worker.terminate(); } catch (e) {} }
+}
 async function readLabel(file) {
   M.label = { msg: "Preparing the label reader. The first use downloads about 15 MB." }; renderDlg();
-  let worker;
   try {
-    const T = await loadOCR();
-    worker = await T.createWorker("eng", 1, { workerPath: OCR.worker, corePath: OCR.core, langPath: OCR.lang, logger: l => { const el = $("#dlg [role=status]"); if (el && l.status === "recognizing text") el.textContent = `Reading the label: ${Math.round(l.progress * 100)}%`; } });
-    const bitmap = await shrinkImage(file, 1800), { data } = await worker.recognize(bitmap), parsed = parseLabel(data.text);
+    const text = await ocrText(file, pct => { const el = $("#dlg [role=status]"); if (el) el.textContent = `Reading the label: ${Math.round(pct * 100)}%`; }), parsed = parseLabel(text);
     if (!M) return;
     if (parsed.kcal == null && parsed.p == null && parsed.c == null && parsed.f == null) { M.label = { err: true, msg: "Tare could not find nutrition values. Retake it straight on with less glare." }; renderDlg(); return; }
     M.prefill = parsed; M.label = null; M.tab = "custom"; renderDlg();
   } catch (e) { if (M) { M.label = { err: true, msg: "The label reader could not run. Connect to the internet once, then try again." }; renderDlg(); } }
-  finally { try { await worker?.terminate(); } catch (e) {} }
 }
 function shrinkImage(file, max) {
   return new Promise((res, rej) => { const url = URL.createObjectURL(file), img = new Image(); img.onload = () => { const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement("canvas"); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k); c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url); res(c); }; img.onerror = () => { URL.revokeObjectURL(url); rej(new Error("image")); }; img.src = url; });
@@ -549,6 +651,7 @@ function recipeResults(r) {
 function recipeBody() {
   const r = M.recipe || (M.recipe = { name: "", servings: 4, q: "", items: [] }), t = recipeTotals(r), s = Math.max(.1, num(r.servings, 1));
   return `<div class="form recipehead"><label>Recipe name<input id="rname" maxlength="70" value="${esc(r.name)}" placeholder="Turkey chili"></label><label>Servings made<input id="rserv" type="number" inputmode="decimal" min="0.5" step="0.5" value="${esc(r.servings)}"></label></div>
+  ${recipeImportHTML()}
   <input id="rq" type="search" placeholder="Add an ingredient" aria-label="Add an ingredient" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" value="${esc(r.q)}">
   <div id="rRes">${recipeResults(r)}</div>
   ${r.items.length ? `<div class="stack" style="gap:6px">${r.items.map((it, i) => `<div class="chooser" style="grid-template-columns:76px minmax(0,1fr) auto"><input aria-label="Amount of ${esc(it.food.name)}" data-ring="${i}" type="number" inputmode="decimal" min="0.05" step="any" value="${it.qty}"><span><b>${esc(it.food.name)}</b><br><small class="muted">${it.food.db ? "× 100 g" : esc(it.food.serv)}</small></span><button type="button" class="iconbtn quiet" data-pro="ringdel" data-i="${i}" aria-label="Remove ${esc(it.food.name)}">${ICONS.close}</button></div>`).join("")}</div><p class="mono muted" id="rTotal" style="margin:0">Per serving: ${fmt(t.kcal / s)} kcal · ${Math.round(t.p / s)}P ${Math.round(t.c / s)}C ${Math.round(t.f / s)}F</p><p class="err" id="rErr" hidden></p><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn primary" data-pro="rsave" data-add="1">Save and add 1 serving</button><button type="button" class="btn" data-pro="rsave">Save recipe</button></div>` : `<p class="muted" style="margin:0">Search above to add your first ingredient.</p>`}`;
@@ -557,7 +660,7 @@ function saveRecipe(addIt) {
   const r = M.recipe, name = String(r.name).trim(), s = num(r.servings), err = $("#rErr");
   if (!name || !(s > 0)) { if (err) { err.textContent = "Add a recipe name and a serving count."; err.hidden = false; } return; }
   const t = recipeTotals(r), n = {}; for (const k in t.n) n[k] = +(t.n[k] / s).toFixed(2);
-  const food = { name: name.slice(0, 80), serv: "1 serving", kcal: Math.round(t.kcal / s), p: +(t.p / s).toFixed(1), c: +(t.c / s).toFixed(1), f: +(t.f / s).toFixed(1), recipe: true, ...(Object.keys(n).length ? { n } : {}) };
+  const food = { name: name.slice(0, 80), serv: "1 serving", kcal: Math.round(t.kcal / s), p: +(t.p / s).toFixed(1), c: +(t.c / s).toFixed(1), f: +(t.f / s).toFixed(1), recipe: true, ...(Object.keys(n).length ? { n } : {}), servings: s, items: r.items.filter(i => i.qty > 0).slice(0, 80).map(i => ({ food: slimFood(i.food), qty: +num(i.qty).toFixed(3) })) };
   S.custom = [food, ...S.custom.filter(c => c.barcode || c.name !== food.name)].slice(0, 300); touch();
   if (addIt) addEntry(food, 1);
   $("#dlg").close(); render();
@@ -719,7 +822,7 @@ function openEdit(id) {
   <label class="half">Carbs (g)<input id="cc" name="c" type="number" min="0" step="any" inputmode="decimal" required value="${shown.c}"></label>
   <label class="half">Fat (g)<input id="cf" name="f" type="number" min="0" step="any" inputmode="decimal" required value="${shown.f}"></label>
   <p class="mono muted full" id="editTotal" style="margin:0"></p><p class="err full" id="editErr" hidden></p>
-  <div class="full" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary">Save changes</button><button type="button" class="btn danger" id="editDelete" data-pro="editdel">Delete food</button></div></form></div></div>`;
+  <div class="full" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary">Save changes</button><button type="button" class="btn danger" id="editDelete" data-pro="editdel">Delete food</button></div>${savedRecipe(e.name) ? `<div class="full"><button type="button" class="link" data-pro="splitrecipe">Split into ingredients</button><p class="muted" style="margin:0;font-size:12px">Replaces this entry with each ingredient so you can change them for this meal. Your saved recipe stays the same.</p></div>` : ""}</form></div></div>`;
   $("#dlg").showModal();
   initServing();
   updateEditTotal();
@@ -862,23 +965,70 @@ function insightsView() {
   return `<div class="seg" style="justify-self:start" role="group" aria-label="Insight range">${[[7, "7 days"], [30, "30 days"], [90, "90 days"], ["all", "All"]].map(r => `<button data-pro="irange" data-r="${r[0]}" aria-pressed="${insightRange === r[0]}">${r[1]}</button>`).join("")}</div>
   <section class="card stats"><div class="stat"><span>Logging streak</span><b>${streak(logged)}</b><span>days</span></div><div class="stat"><span>Weigh-in streak</span><b>${streak(weighed)}</b><span>days</span></div><div class="stat"><span>Food logged</span><b>${logPct}%</b><span>last 28 days</span></div><div class="stat"><span>Weighed in</span><b>${weighPct}%</b><span>last 28 days</span></div></section>
   ${eta ? `<section class="card"><h2>Goal</h2><p class="muted" style="margin:6px 0 0">${esc(eta)}</p></section>` : ""}
+  ${habitsCard(days)}
   <div class="grid2"><section class="card stack"><h2>Consistency</h2><div class="heat heathead" aria-hidden="true">${DAY_NAMES.map(n => `<b>${n[0]}</b>`).join("")}</div><div class="heat" role="img" aria-label="Logging and weigh-in consistency for the last five weeks">${last35.map(d => `<i title="${esc(short(d))}" class="${d > today() ? "future" : logged(d) && weighed(d) ? "both" : logged(d) ? "log" : weighed(d) ? "wgh" : ""}${d === today() ? " today" : ""}"></i>`).join("")}</div><div class="legend"><span><i class="key both"></i>Food and weight</span><span><i class="key log"></i>Food</span><span><i class="key wgh"></i>Weight</span></div></section>
   <section class="card stack"><h2>Nutrition averages</h2><div style="overflow-x:auto"><table class="tbl"><thead><tr><th></th><th>kcal</th><th>P</th><th>C</th><th>F</th></tr></thead><tbody>${ave.map(([l, a]) => `<tr><th>${l}</th>${a ? `<td>${fmt(a.kcal)}</td><td>${Math.round(a.p)}</td><td>${Math.round(a.c)}</td><td>${Math.round(a.f)}</td>` : `<td colspan="4" class="muted">No logged days</td>`}</tr>`).join("")}</tbody></table></div></section>
-  ${mealsOff() ? "" : `<section class="card stack"><h2>Nutrient timing</h2>${MEALS.map((m, i) => { const pct = mealK[i] / allK * 100; return `<div><div class="mealhead"><span>${m}</span><span class="mono">${Math.round(pct)}%</span></div><div class="bar"><i style="width:${pct}%;background:var(--accent)"></i></div></div>`; }).join("")}</section>`}
+  ${timingCard(foods, mealK, allK)}
   <section class="card stack"><div class="mealhead"><h2>Top contributors</h2><select id="contrib" aria-label="Nutrient" style="width:auto;max-width:55%">${keys.map(k => opt(k[0], k[1], contributor)).join("")}</select></div>${top.length ? top.map(t => `<div><div class="mealhead"><span style="min-width:0;overflow-wrap:anywhere">${esc(t.name)}</span><span class="mono">${Math.round(t.pct)}%</span></div><div class="bar"><i style="width:${t.pct}%;background:var(--protein)"></i></div></div>`).join("") : `<p class="muted" style="margin:0">No logged foods have this nutrient yet.</p>`}</section></div>
+  ${periodCard()}
   ${richCard()}
   <section class="card stack"><h2>Micronutrients</h2><p class="muted" style="margin:0;font-size:13px">Daily average from foods with this data. Scanned products, labels, and recipes can include it. Most built-in foods do not, so true intake may be higher.</p><div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Nutrient</th><th>Daily avg</th><th>% DV</th><th>Foods</th></tr></thead><tbody>${micro.map(m => `<tr><th>${m.label}</th><td>${m.count ? `${m.avg >= 10 ? Math.round(m.avg) : m.avg.toFixed(1)} ${m.u}` : "–"}</td><td>${m.count ? Math.round(m.avg / m.dv * 100) + "%" : "–"}</td><td>${m.count}</td></tr>`).join("")}</tbody></table></div></section>`;
+}
+
+/* Habits: how often logged days land on target */
+function habitsCard(days) {
+  const past = days.filter(d => d < today() && !peek(d).skip).map(d => ({ d, t: totals(d), g: dayPlan(d) })).filter(x => x.g.kcal > 0);
+  if (!past.length) return "";
+  const n = past.length, pct = k => Math.round(k / n * 100);
+  const onCal = past.filter(x => Math.abs(x.t.kcal - x.g.kcal) <= x.g.kcal * .1).length, withP = past.filter(x => x.g.p > 0), hitP = withP.filter(x => x.t.p >= x.g.p * .9).length;
+  const gap = past.reduce((a, x) => a + x.t.kcal - x.g.kcal, 0) / n, under = past.filter(x => x.t.kcal < x.g.kcal * .9).length, over = past.filter(x => x.t.kcal > x.g.kcal * 1.1).length;
+  return `<section class="card stack"><h2>Target habits</h2><div class="habits"><div class="stat"><span>Calories on target</span><b>${pct(onCal)}%</b><span>within 10% · ${onCal} of ${n} days</span></div><div class="stat"><span>Protein target met</span><b>${withP.length ? Math.round(hitP / withP.length * 100) + "%" : "–"}</b><span>at least 90% of target</span></div><div class="stat"><span>Average vs target</span><b>${signed(gap, 0)}</b><span>kcal a day</span></div></div><p class="muted" style="margin:0;font-size:13px">${under} ${under === 1 ? "day" : "days"} under and ${over} over by more than 10%. Today and days left out of the estimate are not counted. ${coachingOff() || S.profile.mode === "manual" ? "" : "Missing targets does not change how the coach sets new ones; it uses what you actually ate."}</p></section>`;
+}
+
+/* Weekly and monthly averages */
+let periodBy = "week";
+function periodRows() {
+  const T = trendMap(), out = [], now = today();
+  for (let i = 0; i < (periodBy === "week" ? 8 : 6); i++) {
+    let start, end, label;
+    if (periodBy === "week") { start = add(add(now, -parse(now).getDay()), -7 * i); end = add(start, 6); label = short(start); }
+    else { const d = parse(now); const first = new Date(d.getFullYear(), d.getMonth() - i, 1), last = new Date(first.getFullYear(), first.getMonth() + 1, 0); start = iso(first); end = iso(last); label = first.toLocaleDateString(undefined, { month: "short", year: "2-digit" }); }
+    const ds = []; for (let d = start; d <= end && d <= now; d = add(d, 1)) ds.push(d);
+    const logged = ds.filter(d => peek(d).foods.length), a = averages(logged), tk = ds.filter(d => T[d] != null);
+    const change = tk.length > 1 ? T[tk[tk.length - 1]] - T[tk[0]] : null;
+    if (!logged.length && change == null) continue;
+    out.push({ label, a, n: logged.length, change });
+  }
+  return out;
+}
+function periodCard() {
+  const rows = periodRows();
+  return `<section class="card stack"><div class="mealhead"><h2>${periodBy === "week" ? "Weekly" : "Monthly"} averages</h2><div class="seg" role="group" aria-label="Group by">${[["week", "Weeks"], ["month", "Months"]].map(([k, l]) => `<button type="button" data-pro="periodby" data-b="${k}" aria-pressed="${periodBy === k}">${l}</button>`).join("")}</div></div>${rows.length ? `<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>${periodBy === "week" ? "Week of" : "Month"}</th><th>kcal</th><th>P</th><th>C</th><th>F</th><th>Days</th><th>Trend</th></tr></thead><tbody>${rows.map(r => `<tr><th>${esc(r.label)}</th>${r.a ? `<td>${fmt(r.a.kcal)}</td><td>${Math.round(r.a.p)}</td><td>${Math.round(r.a.c)}</td><td>${Math.round(r.a.f)}</td>` : `<td colspan="4" class="muted">No food logged</td>`}<td>${r.n}</td><td>${r.change == null ? "–" : signed(toUser(r.change), 1)}</td></tr>`).join("")}</tbody></table></div><p class="muted" style="margin:0;font-size:12px">Averages use logged days only. Trend is the change in trend weight across the ${periodBy}, in ${unit()}.</p>` : `<p class="muted" style="margin:0">Log food or weight to see averages.</p>`}</section>`;
+}
+
+/* Nutrient timing by meal or by time of day */
+let timingBy = "meal";
+const TIME_SLOTS = [["Before 9 am", 0, 9], ["9 am to noon", 9, 12], ["Noon to 3 pm", 12, 15], ["3 to 6 pm", 15, 18], ["6 to 9 pm", 18, 21], ["After 9 pm", 21, 24]];
+function timingCard(foods, mealK, allK) {
+  const byTimeOnly = mealsOff(), mode = byTimeOnly ? "time" : timingBy, timed = foods.filter(e => e.t), timedK = timed.reduce((a, e) => a + e.kcal, 0) || 1;
+  const rows = mode === "meal" ? MEALS.map((m, i) => [m, mealK[i] / allK * 100]) : TIME_SLOTS.map(([l, a, b]) => [l, timed.filter(e => { const h = +e.t.slice(0, 2); return h >= a && h < b; }).reduce((x, e) => x + e.kcal, 0) / timedK * 100]);
+  const note = mode === "time" ? (timed.length ? `Based on ${timed.length} foods with a logged time. Foods added to past days have no time.` : "Foods logged from now on record their time.") : "";
+  return `<section class="card stack"><div class="mealhead"><h2>Nutrient timing</h2>${byTimeOnly ? "" : `<div class="seg" role="group" aria-label="Group timing by">${[["meal", "Meals"], ["time", "Time of day"]].map(([k, l]) => `<button type="button" data-pro="timingby" data-b="${k}" aria-pressed="${mode === k}">${l}</button>`).join("")}</div>`}</div>${rows.map(([l, pct]) => `<div><div class="mealhead"><span>${l}</span><span class="mono">${Math.round(pct)}%</span></div><div class="bar"><i style="width:${pct}%;background:var(--accent)"></i></div></div>`).join("")}${note ? `<p class="muted" style="margin:0;font-size:12px">${note}</p>` : ""}</section>`;
 }
 
 /* Events */
 document.addEventListener("click", ev => {
   const b = ev.target.closest("[data-pro]"); if (!b) return;
   const a = b.dataset.pro;
+  if (a === "periodby") { periodBy = b.dataset.b; render(); }
+  if (a === "timingby") { timingBy = b.dataset.b; render(); }
   if (a === "irange") { insightRange = b.dataset.r === "all" ? "all" : +b.dataset.r; render(); }
   if (a === "goday" && b.dataset.d <= today()) { cursor = b.dataset.d; render(); }
   if (a === "gotoday") { cursor = today(); render(); }
   if (a === "microtoggle") { microsExpanded = !microsExpanded; render(); }
   if (a === "goals") openGoals();
+  if (a === "goalmaintain") { const p = S.profile, was = p.goal; p.goal = 0; noteGoalChange(was, 0, false); p.plan = targets(); touch(); render(); setSave("Switched to dynamic maintenance"); }
+  if (a === "goalstay") { S.profile.goalPromptOff = S.profile.goalKg; touch(); render(); }
   if (a === "goalscoach") { const p = S.profile; p.mode = p.lastCoachMode || "coached"; p.plan = targets(); touch(); $("#dlg").close(); render(); }
   if (a === "goalsclear") { S.profile.useTargets = false; S.profile.plan = trackingPlan(); touch(); $("#dlg").close(); render(); }
   if (a === "editentry") openEdit(b.dataset.id);
@@ -887,6 +1037,10 @@ document.addEventListener("click", ev => {
     const { date, id } = editing; editing = null; $("#dlg").close(); removeEntry(date, id);
   }
   if (a === "undo") undoRemove();
+  if (a === "explode") explodeRecipe();
+  if (a === "splitrecipe") splitLoggedRecipe();
+  if (a === "pdel" && M?.parse) { M.parse.items.splice(+b.dataset.i, 1); refreshParsed(); }
+  if (a === "padd" && M?.parse) addParsed();
   if (a === "copyentry") { const e = peek(cursor).foods.find(x => x.id === b.dataset.id); if (e) { clip = { type: "food", items: [copyItem(e)] }; setSave("Food copied"); render(); } }
   if (a === "copymeal") { clip = { type: "meal", items: peek(cursor).foods.filter(e => e.meal === b.dataset.meal).map(copyItem) }; setSave("Meal copied"); render(); }
   if (a === "copyday") { clip = { type: "day", items: peek(cursor).foods.map(copyItem) }; setSave("Day copied"); render(); }
@@ -910,11 +1064,16 @@ document.addEventListener("click", ev => {
 document.addEventListener("input", ev => {
   const t = ev.target;
   if (t.id === "kg") t.dataset.edited = "1";
+  if (t.id === "rateAmt" || t.id === "kg") syncRateRow();
   if (t.id === "servAmt") applyServingAmount();
   if (t.dataset.servMacro && servState) readServingBase();
   if ($("#editTotal")) updateEditTotal();
   if ($("#formMicro")) refreshFormMicros();
   if ($("#gKcal")) updateGoalTotal();
+  if (t.id === "ptext" && M?.parse) { M.parse.text = t.value; clearTimeout(parseTimer); parseTimer = setTimeout(() => { if (M?.parse && $("#ptext")) { reparse(); refreshParsed(); } }, 350); }
+  if (t.dataset.pamt != null && M?.parse) {
+    const it = M.parse.items[+t.dataset.pamt]; if (it) { it.amt = Math.max(0, num(t.value)); const el = $("#pk" + t.dataset.pamt); if (el) el.textContent = `${fmt(parsedTotals(it).kcal)} kcal`; const s = parsedSummary(), tot = $("#pTotal"); if (tot) tot.textContent = `${s.n} ${s.n === 1 ? "food" : "foods"} · ${s.text}`; }
+  }
   if (!M?.recipe) return;
   if (t.id === "rname") M.recipe.name = t.value;
   if (t.id === "rserv" || t.dataset.ring != null) {
@@ -923,6 +1082,7 @@ document.addEventListener("input", ev => {
   }
   if (t.id === "rq") { M.recipe.q = t.value; const box = $("#rRes"); if (box) box.innerHTML = recipeResults(M.recipe); }
 });
+document.addEventListener("toggle", ev => { if (ev.target.id === "rimport" && M?.parse) M.parse.open = ev.target.open; }, true);
 document.addEventListener("keydown", ev => {
   if (ev.target.id !== "q" || ev.key !== "Enter" || ev.isComposing) return;
   ev.preventDefault();
@@ -931,10 +1091,11 @@ document.addEventListener("keydown", ev => {
 });
 document.addEventListener("change", ev => {
   const t = ev.target;
-  if (t.id === "qtyUnit") { $("#qty").value = t.value === "g" ? 100 : t.value === "oz" ? 3.5 : 1; updateDbAmount(); }
+  if (t.id === "qtyUnit") { changeQtyUnit(t); updateQty(); }
   if (t.id === "servUnit") { changeServingUnit(t); refreshFormMicros(); }
   if (t.id === "hideMeals") { S.profile.hideMeals = t.checked; touch(); }
   if (t.id === "coachSwitch") syncCoachFields();
+  if (t.id === "goal") { syncRateRow(); if (!$("#rateRow").hidden && !$("#rateAmt").value) $("#rateAmt").focus(); }
   if (t.id === "useTargets") { const row = $("#trackTargetRow"); row.hidden = !t.checked; row.querySelectorAll("input").forEach(i => { i.disabled = !t.checked; }); }
   if (t.id === "pmode") { const row = $("#manualRow"), manual = t.value === "manual"; $("#nudgeRow").hidden = t.value !== "collab"; row.hidden = !manual; row.querySelectorAll("input").forEach(i => { i.disabled = !manual; }); }
   if (t.id === "contrib") { contributor = t.value; render(); }
@@ -944,6 +1105,8 @@ document.addEventListener("change", ev => {
   if (t.id === "fastStartAt") setFastStart(t.value);
   if (t.dataset.proChange === "period") { const x = day(cursor); if (t.checked) x.period = true; else delete x.period; touch(cursor); render(); }
   if (t.id === "labelPhoto" && t.files[0]) readLabel(t.files[0]);
+  if (t.id === "recipePhoto" && t.files[0]) { readRecipePhoto(t.files[0]); t.value = ""; }
+  if (t.dataset.palt != null && M?.parse) { const it = M.parse.items[+t.dataset.palt]; if (it) { it.ai = +t.value; setParsedAmount(it); refreshParsed(); } }
   if (t.id === "progressPhoto" && t.files[0]) { addPhoto(t.files[0]); t.value = ""; }
 });
 document.addEventListener("submit", ev => {
@@ -954,7 +1117,10 @@ document.addEventListener("submit", ev => {
     const mode = d.get("mode"), goalW = num(d.get("goalWeight"));
     if (mode === "manual") { const manual = { kcal: Math.round(num(d.get("mk"))), p: Math.round(num(d.get("mp"))), c: Math.round(num(d.get("mc"))), f: Math.round(num(d.get("mf"))) }; if (manual.kcal < 800) { err.textContent = "Enter at least 800 calories for a manual target."; err.hidden = false; return; } p.manual = manual; }
     p.mode = mode; p.diet = d.get("diet"); p.nudge = clamp(num(d.get("nudge")), -300, 300); p.week = week;
-    if (goalW > 0) p.goalKg = +fromUser(goalW).toFixed(3); else delete p.goalKg;
+    if (d.get("predictive")) p.predictive = true; else delete p.predictive;
+    const goalKg = goalW > 0 ? +fromUser(goalW).toFixed(3) : 0;
+    if (goalKg !== (p.goalKg || 0)) { p.goalSetKg = +latestTrend().toFixed(3); delete p.goalPromptOff; }
+    if (goalKg) p.goalKg = goalKg; else delete p.goalKg;
     p.plan = targets(); touch(); render();
   }
   if (t === "editentry" && editing) saveEdit(d);
@@ -1201,3 +1367,271 @@ function foodKind(name) {
   return best;
 }
 const foodIcon = name => `<span class="foodicon" aria-hidden="true"><svg viewBox="0 0 24 24">${FOOD_ICONS[foodKind(name)]}</svg></span>`;
+
+/* Describe a meal. A parser on this phone turns "2 eggs, toast with butter" into foods to review.
+   It also reads pasted or photographed recipe ingredient lists. Nothing is sent anywhere. */
+const WORD_NUMS = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, dozen: 12 };
+const FRACTIONS = { "½": .5, "¼": .25, "¾": .75, "⅓": 1 / 3, "⅔": 2 / 3, "⅛": .125, "⅜": .375, "⅝": .625, "⅞": .875 };
+const WEIGHT_G = { g: 1, kg: 1000, oz: 28.3495, lb: 453.592 };
+const VOLUME_ML = { ml: 1, l: 1000, cup: 240, tbsp: 15, tsp: 5, floz: 29.5735, glass: 240 };
+const UNIT_RE = [
+  ["floz", /^(fl\.?\s*oz|fluid ounces?)\b\.?/], ["kg", /^(kgs?|kilos?|kilograms?)\b\.?/], ["g", /^(g|gr|grams?|grammes?)\b\.?/],
+  ["oz", /^(oz|ounces?)\b\.?/], ["lb", /^(lbs?|pounds?)\b\.?/], ["ml", /^(ml|milliliters?|millilitres?)\b\.?/], ["l", /^(l|liters?|litres?)\b\.?/],
+  ["cup", /^(cups?|c)\b\.?/], ["tbsp", /^(tbsps?|tbs|tbl|tablespoons?)\b\.?/], ["tsp", /^(tsps?|teaspoons?)\b\.?/], ["glass", /^(glass|glasses)\b/],
+  ["count", /^(slices?|pieces?|pcs|scoops?|servings?|cans?|bars?|bottles?|bowls?|plates?|handfuls?|cloves?|sticks?|packets?|packs?|containers?|cartons?|pats?|links?|patty|patties|fillets?|wedges?|strips?)\b/]
+];
+const PREP_WORDS = /\b(chopped|diced|minced|sliced|thinly|finely|roughly|coarsely|beaten|whisked|sifted|drained|rinsed|toasted lightly|divided|softened|melted|cubed|shredded|peeled|seeded|trimmed|packed|heaping|level|room temperature|at room temperature|to taste|optional|for garnish|for serving|plus more|or more|as needed|about|around|approximately|roughly|some|like)\b/g;
+const COUNTLESS = new Set(["cup", "tbsp", "tsp", "ml", "l", "g", "kg", "oz", "lb", "floz", "glass"]);
+function normalizeFractions(s) { return String(s).replace(/(\d+)?\s*([½¼¾⅓⅔⅛⅜⅝⅞])/g, (_, d, f) => String((d ? +d : 0) + FRACTIONS[f])); }
+// Reads a leading amount such as "2", "1 1/2", "0.5", "2-3", "a", "half a", or "a couple of".
+function takeQuantity(s) {
+  let m;
+  if ((m = s.match(/^(\d+(?:[.,]\d+)?)\s*(?:-|to)\s*(\d+(?:[.,]\d+)?)(?![\d%])/))) return { n: (+m[1].replace(",", ".") + +m[2].replace(",", ".")) / 2, rest: s.slice(m[0].length) };
+  if ((m = s.match(/^(\d+)\s+(\d+)\/(\d+)(?![\d%])/)) && +m[3]) return { n: +m[1] + m[2] / m[3], rest: s.slice(m[0].length) };
+  if ((m = s.match(/^(\d+)\/(\d+)(?![\d%])/)) && +m[2]) return { n: m[1] / m[2], rest: s.slice(m[0].length) };
+  if ((m = s.match(/^(\d+(?:[.,]\d+)?)(?!\s*%)(?:\s*x\b)?/))) return { n: +m[1].replace(",", "."), rest: s.slice(m[0].length) };
+  if ((m = s.match(/^(a\s+half|half(\s+an?)?)\s+(of\s+)?/))) return { n: .5, rest: s.slice(m[0].length) };
+  if ((m = s.match(/^(a\s+)?couple(\s+of)?\s+/))) return { n: 2, rest: s.slice(m[0].length) };
+  if ((m = s.match(/^(a\s+)?few\s+/))) return { n: 3, rest: s.slice(m[0].length) };
+  if ((m = s.match(/^([a-z]+)\s+/)) && WORD_NUMS[m[1]] != null) return { n: WORD_NUMS[m[1]], rest: s.slice(m[0].length) };
+  return null;
+}
+function takeUnit(s) {
+  const t = s.replace(/^\s+/, "");
+  for (const [u, re] of UNIT_RE) { const m = t.match(re); if (m) return { u, word: stemWord(m[0].trim().replace(/\.$/, "")), rest: t.slice(m[0].length) }; }
+  return null;
+}
+// Turns an amount and unit into grams, milliliters, or a count.
+function quantityFrom(n, unitHit) {
+  if (!unitHit) return { n };
+  if (WEIGHT_G[unitHit.u]) return { n, g: n * WEIGHT_G[unitHit.u] };
+  if (VOLUME_ML[unitHit.u]) return { n, ml: n * VOLUME_ML[unitHit.u], vol: unitHit.u };
+  return { n, cw: unitHit.word };
+}
+function readAmount(text) {
+  let s = normalizeFractions(text).trim(), q = {};
+  const lead = takeQuantity(s);
+  if (lead) {
+    s = lead.rest.trim();
+    // "1 (15 oz) can beans" gives the size of each can.
+    const inner = s.match(/^\((\d+(?:[.,]\d+)?)\s*([a-z. ]+?)\)\s*/);
+    const innerUnit = inner && takeUnit(inner[2]);
+    if (innerUnit && innerUnit.u !== "count") { q = quantityFrom(lead.n * +inner[1].replace(",", "."), innerUnit); s = s.slice(inner[0].length); const c = takeUnit(s); if (c?.u === "count") s = c.rest; }
+    else { const u = takeUnit(s); q = quantityFrom(lead.n, u); if (u) s = u.rest; }
+  } else {
+    const unitFirst = takeUnit(s);
+    if (unitFirst && unitFirst.u !== "count" && /^\s+of\b/.test(unitFirst.rest)) { q = quantityFrom(1, unitFirst); s = unitFirst.rest; }
+    const tail = s.match(/\s(\d+(?:[.,]\d+)?)\s*([a-z. ]{1,12})$/) || s.match(/\s*\bx\s*(\d+)$/) || s.match(/\s(\d+)\s*x$/);
+    if (tail) { const u = tail[2] ? takeUnit(tail[2]) : null; if (!tail[2] || (u && u.rest.trim() === "")) { q = quantityFrom(+tail[1].replace(",", "."), u); s = s.slice(0, tail.index); } }
+  }
+  s = s.replace(/^\s*of\s+(the\s+)?/, "").replace(/\([^)]*\)/g, " ");
+  return { q, food: s };
+}
+// Everyday words mapped to how food databases name them.
+const WORD_SWAPS = [[/\btoast\b/g, "bread toasted"], [/\boj\b/g, "orange juice"], [/\bpb\b/g, "peanut butter"], [/\bevoo\b/g, "olive oil"], [/\bcoke\b/g, "cola"], [/\bfries\b/g, "french fries"], [/\bspuds?\b/g, "potato"]];
+// Grams per milliliter for foods whose entry has no cup or spoon measure. Used only as a flagged guess.
+const DENSITY = [[/\b(rolled oats|oats|oatmeal|granola|muesli)\b.*\b(dry|rolled|old fashioned|steel cut|quick)\b|^oats\b/, .34], [/\b(cereal|flakes|puffed|crisps?)\b/, .15], [/\bflour\b/, .52], [/\bcocoa\b/, .35], [/\b(protein|whey|casein)\b.*\bpowder|\bwhey\b/, .4], [/\bsugars?, brown\b|\bbrown sugar/, .92], [/\bsugar\b/, .83], [/\b(honey|syrup|molasses)\b/, 1.4], [/\b(peanut|almond|cashew|nut|seed) butter|\btahini\b/, 1.07], [/\b(oil|ghee)\b/, .91], [/\bbutter\b/, .95], [/\b(rice|quinoa|couscous|lentils?|beans?|chickpeas?)\b.*\b(raw|dry|uncooked)\b/, .78], [/\b(rice|quinoa|couscous|beans?|lentils?|chickpeas?)\b/, .7], [/\b(pasta|noodles?|macaroni|spaghetti)\b/, .58], [/\b(almonds?|walnuts?|cashews?|peanuts?|pecans?|nuts?|pistachios?)\b/, .58], [/\bcheese\b.*\b(shredded|grated)\b|\bparmesan\b/, .47], [/\b(spinach|lettuce|greens|kale|arugula)\b/, .13], [/\b(berr(y|ies)|grapes?|cherr(y|ies))\b/, .62], [/\b(milk|juice|water|broth|stock|yogurt|kefir|cream|soup|coffee|tea|beverage|drink|soda|cola|beer|wine)\b/, 1.02]];
+const densityGuess = name => { const l = String(name).toLowerCase(); for (const [re, d] of DENSITY) if (re.test(l)) return d; return .6; };
+function cleanFoodWords(s, recipe) {
+  let t = String(s).toLowerCase().replace(recipe ? /,/g : /$^/, " ").replace(PREP_WORDS, " ");
+  for (const [re, to] of WORD_SWAPS) t = t.replace(re, to);
+  t = t.replace(/\s+or\s+.*$/, "").replace(/[^a-z0-9%&'\- ]/g, " ").replace(/\s+/g, " ").trim();
+  t = t.replace(/^(and|with|of|the|my|some)\s+/, "").replace(/\s+(and|with|of)$/, "").trim();
+  return t;
+}
+// Phrases like "mac and cheese" stay whole when a food with that name exists.
+function splitJoined(piece) {
+  const parts = piece.split(/\s+(?:and|with|w\/|plus|&)\s+/);
+  if (parts.length < 2) return [piece];
+  const whole = cleanFoodWords(readAmount(piece).food), top = whole ? rankFoods(whole)[0] : null;
+  if (top && /\b(and|with|&)\b/i.test(top.name)) return [piece];
+  return parts;
+}
+function splitFoodText(text, recipe) {
+  const lines = String(text || "").replace(/\r/g, "").split(/\n|;/).map(l => l.replace(/^\s*([-*•·▢□]|\d+[.)]\s)\s*/, "").trim()).filter(Boolean);
+  // A recipe's first line is usually its title.
+  if (recipe && lines.length >= 3 && titleFromText(lines[0])) lines.shift();
+  const pieces = [];
+  for (const line of lines) {
+    if (recipe) {
+      const words = line.split(/\s+/).length, lower = line.toLowerCase();
+      if (/:$/.test(line) || /^(ingredients|directions|instructions|method|preparation|steps?|notes?)\b/.test(lower) || /\b(serves|servings|yield|makes)\b/.test(lower)) continue;
+      if (words > 12 || (!takeQuantity(normalizeFractions(lower)) && words > 5)) continue;
+      if (/\bto taste\b/.test(lower)) continue;
+      const trimmed = lower.replace(PREP_WORDS, " ").replace(/\b(and|or|then)\s*(?=,|$)/g, "").replace(/,\s*(and|or)\b/g, ",").replace(/[,\s]+$/, "").replace(/^(\d)\s*([a-z])/, "$1 $2");
+      pieces.push(...splitJoined(trimmed));
+    } else {
+      const clean = line.toLowerCase().replace(/^(i\s+)?(had|ate|eaten|drank|have|having|eat|drink)\s+/, "").replace(/\s+for\s+(breakfast|lunch|dinner|a snack|snack)\b/, "");
+      for (const part of clean.split(/,|\s+then\s+/)) if (part.trim()) pieces.push(...splitJoined(part.trim()));
+    }
+  }
+  return pieces.slice(0, 40);
+}
+function servingsFromText(text) { const m = String(text || "").match(/\b(?:serves|servings?|yields?|makes)\s*:?\s*(?:about\s+)?(\d+)/i); return m ? +m[1] : 0; }
+function titleFromText(text) { const first = String(text || "").split("\n").map(l => l.trim()).find(Boolean) || ""; return !/\d/.test(first) && first.split(/\s+/).length <= 6 && first.length <= 60 ? first.replace(/[:.]$/, "") : ""; }
+
+// The size of one serving of a food, as a count of something, grams, or milliliters.
+function servingShape(text, grams) {
+  const t = normalizeFractions(String(text || "").toLowerCase()), lead = takeQuantity(t), rest = lead ? lead.rest : t, u = takeUnit(rest), count = lead ? lead.n : 1, out = { count, word: "" };
+  if (u && VOLUME_ML[u.u]) out.ml = count * VOLUME_ML[u.u];
+  else if (u && WEIGHT_G[u.u]) out.g = count * WEIGHT_G[u.u];
+  else out.word = stemWord((u ? u.word : (rest.trim().split(/[\s(,]+/)[0] || "")));
+  const w = parseServing(t);
+  if (grams > 0) out.g = grams; else if (w && out.g == null && out.ml == null) { if (w.unit === "ml") out.ml = w.amt; else out.g = w.amt * (w.unit === "oz" ? SERVING_UNITS.oz : 1); }
+  if (out.word && COUNTLESS.has(out.word)) out.word = "";
+  return out;
+}
+// Returns grams for USDA foods or servings for other foods, and whether the conversion is reliable.
+function convertAmount(f, q) {
+  const n = q.n ?? 1, given = q.n != null;
+  if (f.db) {
+    const p = f.portion && f.portionGrams ? servingShape(f.portion, f.portionGrams) : null;
+    if (q.g) return { amt: q.g, sure: true };
+    if (q.ml) return p?.ml ? { amt: q.ml * p.g / p.ml, sure: true } : { amt: q.ml * densityGuess(f.name), sure: false };
+    if (p) return { amt: n / (p.count || 1) * p.g, sure: !q.cw || !p.word || stemWord(q.cw) === p.word || !given };
+    return { amt: n * 100, sure: !given };
+  }
+  const s = servingShape(f.serv);
+  if (q.g) return s.g ? { amt: q.g / s.g, sure: true } : s.ml ? { amt: q.g / (s.ml * densityGuess(f.name)), sure: false } : { amt: 1, sure: false };
+  if (q.ml) return s.ml ? { amt: q.ml / s.ml, sure: true } : s.g ? { amt: q.ml * densityGuess(f.name) / s.g, sure: false } : { amt: 1, sure: false };
+  if (s.word) return { amt: n / (s.count || 1), sure: true };
+  return { amt: n, sure: !given };
+}
+// People say "cooked rice" while food names start with the noun ("Rice, cooked"), so both word orders are tried.
+function rankPhrase(query) {
+  const words = query.split(" "), best = new Map(), orders = [query];
+  if (words.length > 1) orders.push([words[words.length - 1], ...words.slice(0, -1)].join(" "));
+  for (const text of orders) for (const x of rankFoodsScored(text)) { const k = foodKey(x.food), had = best.get(k); if (!had || x.score > had.score) best.set(k, x); }
+  return [...best.values()].sort((a, b) => b.score - a.score);
+}
+function matchPiece(piece, recipe) {
+  const { q, food } = readAmount(piece);
+  let query = cleanFoodWords(food, recipe), ranked = query ? rankPhrase(query) : [];
+  // Drop words from the front ("grilled chicken breast" → "chicken breast") until something matches.
+  const full = query.split(" ");
+  for (let words = full; !ranked.length && words.length > 1;) { words = words.slice(1); query = words.join(" "); ranked = rankPhrase(query); }
+  for (let words = full; !ranked.length && words.length > 1;) { words = words.slice(0, -1); query = words.join(" "); ranked = rankPhrase(query); }
+  ranked = ranked.slice(0, 6);
+  const alts = ranked.map(x => x.food), item = { text: piece.trim(), query, q, alts, ai: 0, amt: 0, sure: true };
+  if (alts.length) {
+    // A close match whose serving converts cleanly beats the top match whose serving does not.
+    const reach = q.ml || q.g ? 40 : 15, firstSure = ranked.findIndex(x => x.score >= ranked[0].score - reach && convertAmount(x.food, q).sure);
+    item.ai = firstSure > 0 ? firstSure : 0;
+    setParsedAmount(item);
+  }
+  return item;
+}
+function setParsedAmount(it) { const c = convertAmount(it.alts[it.ai], it.q); it.amt = +c.amt.toFixed(c.amt >= 10 ? 0 : 2); it.sure = c.sure; }
+function parsedTotals(it) { const f = it.alts[it.ai], k = f.db ? it.amt / 100 : it.amt; return { kcal: f.kcal * k, p: f.p * k, c: f.c * k, f: f.f * k }; }
+function reparse() {
+  const P = M.parse, recipe = P.target === "recipe";
+  P.items = splitFoodText(P.text, recipe).map(x => matchPiece(x, recipe));
+}
+function parseRowHTML(it, i) {
+  if (!it.alts.length) return `<div class="pitem"><div class="prow"><span class="pmiss">No match for “${esc(it.query || it.text)}”</span><button type="button" class="iconbtn quiet" data-pro="pdel" data-i="${i}" aria-label="Remove ${esc(it.text)}">${ICONS.close}</button></div></div>`;
+  const f = it.alts[it.ai], k = parsedTotals(it);
+  return `<div class="pitem"><span class="ptext">${esc(it.text)}</span><div class="prow">${foodIcon(f.name)}<select data-palt="${i}" aria-label="Food for ${esc(it.text)}">${it.alts.map((a, j) => `<option value="${j}" ${j === it.ai ? "selected" : ""}>${esc(a.name)}${a.db ? "" : ` · ${esc(a.serv)}`}</option>`).join("")}</select></div>
+  <div class="prow"><input data-pamt="${i}" type="number" inputmode="decimal" min="0" step="any" value="${it.amt}" aria-label="Amount of ${esc(f.name)}"><span class="punit">${f.db ? "g" : `× ${esc(f.serv)}`}</span><span class="pkcal" id="pk${i}">${fmt(k.kcal)} kcal</span><button type="button" class="iconbtn quiet" data-pro="pdel" data-i="${i}" aria-label="Remove ${esc(f.name)}">${ICONS.close}</button></div>${it.sure ? "" : `<span class="pwarn">Check this amount. Tare guessed the serving size.</span>`}</div>`;
+}
+function parsedSummary() {
+  const items = M.parse.items.filter(it => it.alts.length), t = items.reduce((a, it) => { const k = parsedTotals(it); return { kcal: a.kcal + k.kcal, p: a.p + k.p, c: a.c + k.c, f: a.f + k.f }; }, { kcal: 0, p: 0, c: 0, f: 0 });
+  return { n: items.length, text: `${fmt(t.kcal)} kcal · ${Math.round(t.p)}P ${Math.round(t.c)}C ${Math.round(t.f)}F` };
+}
+function parsedListHTML() {
+  const P = M.parse; if (!P.items.length) return P.text.trim() ? `<p class="muted" style="margin:0">No foods found yet.</p>` : "";
+  const s = parsedSummary(), recipe = P.target === "recipe";
+  return `<div class="plist">${P.items.map(parseRowHTML).join("")}</div><p class="mono muted" id="pTotal" style="margin:0">${s.n} ${s.n === 1 ? "food" : "foods"} · ${s.text}</p><div><button type="button" class="btn primary" data-pro="padd" ${s.n ? "" : "disabled"}>${recipe ? `Add ${s.n} to recipe` : `Add ${s.n} ${s.n === 1 ? "food" : "foods"}`}</button></div>`;
+}
+function refreshParsed() { const box = $("#plist"); if (box) box.innerHTML = parsedListHTML(); }
+function parseState(target) { if (!M.parse || M.parse.target !== target) M.parse = { target, text: "", items: [], msg: "" }; return M.parse; }
+function describeBody() {
+  const P = parseState("log");
+  return `<p class="muted" style="margin:0">Type what you ate, or use your keyboard's microphone to say it. Separate foods with commas or “and”.</p><textarea id="ptext" rows="3" placeholder="2 eggs, 1 slice whole wheat toast with butter, black coffee" aria-label="Describe what you ate" autocapitalize="none" spellcheck="false" enterkeyhint="done">${esc(P.text)}</textarea><div id="plist" class="stack" style="gap:10px">${parsedListHTML()}</div><p class="muted" style="margin:0;font-size:12px">Matching runs on this phone using Tare's foods and your saved foods. Review each match before adding.</p>`;
+}
+function recipeImportHTML() {
+  const P = parseState("recipe");
+  return `<details class="micropanel rimport" id="rimport" ${P.open ? "open" : ""}><summary>Import ingredients <span>paste or photo</span></summary><div class="stack" style="gap:10px;padding-bottom:12px"><p class="muted" style="margin:0;font-size:13px">Paste an ingredient list from a recipe site, or photograph a cookbook page. One ingredient per line works best.</p><textarea id="ptext" rows="4" placeholder="2 cups cooked rice&#10;1 lb ground turkey&#10;1 (15 oz) can black beans, drained" aria-label="Ingredient list" autocapitalize="none" spellcheck="false">${esc(P.text)}</textarea><div><label class="btn small filebtn" for="recipePhoto">Read a recipe photo</label><input id="recipePhoto" type="file" accept="image/*" hidden></div>${P.msg ? `<p class="muted" role="status" id="pstatus" style="margin:0">${esc(P.msg)}</p>` : `<p role="status" id="pstatus" hidden></p>`}<div id="plist" class="stack" style="gap:10px">${parsedListHTML()}</div></div></details>`;
+}
+let parseTimer = null;
+function addParsed() {
+  const P = M.parse, items = P.items.filter(it => it.alts.length && it.amt > 0);
+  if (!items.length) return;
+  if (P.target === "recipe") {
+    for (const it of items) { const f = it.alts[it.ai]; M.recipe.items.push({ food: f, qty: f.db ? +(it.amt / 100).toFixed(3) : it.amt }); }
+    M.parse = { target: "recipe", text: "", items: [], msg: "", open: false }; renderDlg(); return;
+  }
+  for (const it of items) { const f = it.alts[it.ai]; if (f.db) addEntry({ name: f.name, serv: `${it.amt} g`, kcal: f.kcal * it.amt / 100, p: f.p * it.amt / 100, c: f.c * it.amt / 100, f: f.f * it.amt / 100, ...(f.n ? { n: scaleN(f.n, it.amt / 100) } : {}) }, 1); else addEntry(f, it.amt); }
+  $("#dlg").close(); render(); setSave(`Added ${items.length} ${items.length === 1 ? "food" : "foods"}`);
+}
+async function readRecipePhoto(file) {
+  const P = parseState("recipe"), status = () => $("#pstatus");
+  P.open = true; P.msg = "Preparing the text reader. The first use downloads about 15 MB."; renderDlg();
+  try {
+    const text = await ocrText(file, pct => { const el = status(); if (el) el.textContent = `Reading the photo: ${Math.round(pct * 100)}%`; });
+    if (!M?.recipe) return;
+    P.text = text.trim(); P.msg = ""; reparse();
+    const serves = servingsFromText(text), title = titleFromText(text);
+    if (serves) M.recipe.servings = serves;
+    if (title && !M.recipe.name) M.recipe.name = title.slice(0, 70);
+    P.msg = P.items.length ? `Found ${P.items.length} ingredients. Check each one, then add them.` : "No ingredients were found. Try a straighter, closer photo of the ingredient list.";
+    renderDlg();
+  } catch (e) { if (M) { P.msg = "The text reader could not run. Connect to the internet once, then try again."; renderDlg(); } }
+}
+
+/* Recipes keep their ingredients, so a serving can be logged as separate foods and adjusted once */
+function slimFood(f) { return { name: f.name, serv: f.serv, kcal: f.kcal, p: f.p, c: f.c, f: f.f, ...(f.n ? { n: f.n } : {}), ...(f.db ? { db: true } : {}) }; }
+function ingredientFoods(recipe, servings) {
+  const k = servings / Math.max(.1, num(recipe.servings, 1));
+  return (recipe.items || []).map(it => {
+    const q = it.qty * k, f = it.food;
+    if (f.db) { const g = +(q * 100).toFixed(1); return { food: { name: f.name, serv: `${g} g`, kcal: f.kcal * q, p: f.p * q, c: f.c * q, f: f.f * q, ...(f.n ? { n: scaleN(f.n, q) } : {}) }, qty: 1 }; }
+    return { food: f, qty: +q.toFixed(3) };
+  }).filter(x => x.qty > 0);
+}
+function explodeRecipe() {
+  const r = M.sel, servings = selServings(); if (!r?.items?.length || !(servings > 0)) return;
+  const parts = ingredientFoods(r, servings);
+  parts.forEach(x => addEntry(x.food, x.qty));
+  $("#dlg").close(); render(); setSave(`Logged ${parts.length} ingredients from ${r.name}`);
+}
+const savedRecipe = name => S.custom.find(c => c.recipe && c.items?.length && c.name === name);
+function splitLoggedRecipe() {
+  if (!editing) return;
+  const x = peek(editing.date), e = x.foods.find(f => f.id === editing.id), r = e && savedRecipe(e.name); if (!r) return;
+  const at = x.foods.indexOf(e), parts = ingredientFoods(r, e.qty > 0 ? e.qty : 1).map(p => ({ id: uid(), ...(e.t ? { t: e.t } : {}), name: String(p.food.name).slice(0, 100), serv: String(p.food.serv || "1 serving").slice(0, 50), qty: p.qty, meal: e.meal, kcal: Math.round(p.food.kcal * p.qty), p: +(p.food.p * p.qty).toFixed(1), c: +(p.food.c * p.qty).toFixed(1), f: +(p.food.f * p.qty).toFixed(1), ...(p.food.n ? { n: scaleN(p.food.n, p.qty) } : {}) }));
+  x.foods.splice(at, 1, ...parts);
+  const date = editing.date; editing = null; touch(date); $("#dlg").close(); render(); setSave(`Split ${r.name} into ${parts.length} foods`);
+}
+
+/* Log by calories or macros: enter how much of a nutrient you want and Tare works out the amount */
+const BY_NUTRIENT = [["kcal", "calories"], ["p", "g protein"], ["c", "g carbs"], ["f", "g fat"]];
+const nutrientOptions = (f, per) => BY_NUTRIENT.filter(([k]) => num(f[k]) * per > 0).map(([k, l]) => `<option value="${k}">${l}</option>`).join("");
+function servChooserHTML(f) {
+  const keep = $("#qtyUnit")?.value === "serv", q = keep ? Math.max(0, num($("#qty")?.value, 1)) || 1 : 1;
+  return `<div class="dbamount"><label>Amount<input id="qty" type="number" inputmode="decimal" min="0.01" step="any" value="${q}" aria-label="Amount"></label><label>Unit<select id="qtyUnit" aria-label="Unit" data-prev="serv"><option value="serv">× ${esc(f.serv)}</option>${nutrientOptions(f, 1)}</select></label></div><div class="chooser dbchoice"><span><b>${esc(f.name)}</b><br><span class="muted mono" id="qtyInfo"></span></span><button class="btn primary" data-act="addsel">Add</button></div>${f.items?.length ? `<div><button type="button" class="link" data-pro="explode">Log as separate ingredients</button></div>` : ""}<div id="microInfo"></div>`;
+}
+// Servings of a regular food, or grams of a USDA food, from the amount and unit chosen.
+function selServings() {
+  const f = M.sel, a = num($("#qty")?.value), u = $("#qtyUnit")?.value || "serv";
+  if (BY_NUTRIENT.some(b => b[0] === u)) return num(f[u]) > 0 ? a / num(f[u]) : 0;
+  return a;
+}
+function unitAmount(f, unitName, grams) {
+  if (unitName === "g") return grams;
+  if (unitName === "oz") return grams / SERVING_UNITS.oz;
+  if (unitName === "portion") return f.portionGrams ? grams / f.portionGrams : 0;
+  return num(f[unitName]) * grams / 100;
+}
+function changeQtyUnit(sel) {
+  const f = M.sel, before = sel.dataset.prev || (f.db ? "g" : "serv"), qty = $("#qty"), a = num(qty.value);
+  if (f.db) {
+    const prev = sel.value; sel.value = before; const grams = dbGrams(); sel.value = prev;
+    const v = unitAmount(f, sel.value, grams > 0 ? grams : 100);
+    qty.value = sel.value === "kcal" ? Math.round(v) : +v.toFixed(sel.value === "portion" ? 2 : 1);
+  } else {
+    const servings = BY_NUTRIENT.some(b => b[0] === before) ? (num(f[before]) > 0 ? a / num(f[before]) : 1) : a || 1;
+    const v = sel.value === "serv" ? servings : servings * num(f[sel.value]);
+    qty.value = sel.value === "kcal" ? Math.round(v) : +v.toFixed(sel.value === "serv" ? 2 : 1);
+  }
+  sel.dataset.prev = sel.value;
+}
