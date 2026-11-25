@@ -368,3 +368,14 @@ html[data-rail] #toast { bottom: calc(16px + var(--safe-bottom)); }
 @media (max-height: 540px) {
   html[data-rail] nav button, html[data-rail] nav button[aria-current="page"] { min-height: 42px; font-size: 0; gap: 0; }
 }
+/* The rail takes about 100px of width, so narrow-phone layouts apply to Duo screens up to 520px wide */
+@media (max-width: 520px) {
+  html[data-rail] .form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  html[data-rail] .form > * { grid-column: 1 / -1; }
+  html[data-rail] .form > .half, html[data-rail] .form.recipehead > * { grid-column: auto; }
+  html[data-rail] .form.recipehead { grid-template-columns: minmax(0, 1fr) 112px; }
+  html[data-rail] .chooser { grid-template-columns: 80px minmax(0, 1fr); }
+  html[data-rail] .chooser .btn { grid-column: 1 / -1; }
+  html[data-rail] .chooser.dbchoice { grid-template-columns: minmax(0, 1fr) auto; }
+  html[data-rail] .chooser.dbchoice .btn { grid-column: auto; }
+}
