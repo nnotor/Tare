@@ -80,7 +80,8 @@ Everything is free. There are no subscriptions, paywalls, or accounts.
 - Installs to your home screen and opens full screen
 - Opens offline after the first online launch
 - Adapts to compact, foldable, and desktop screens
-- On iPhone Duo's outer screen, follows Apple's layout for side controls: back, forward, and close at the top below the status area, tabs at the bottom, and layouts sized to the space the rail leaves, on either side and in Split View
+- On iPhone Duo's outer screen, follows Apple's layout for side controls: back, forward, and close at the top below the status area, tabs at the bottom, and layouts sized to the space the rail leaves, on either side and in Split View. When the rail is too short for both, back and forward move to the page header
+- Keeps titles and buttons clear of rounded screen corners and the home indicator, and lists the screen size and safe areas iOS reports under **Plan** to help diagnose layout problems on a particular phone
 - Supports light and dark mode
 - Uses camera zoom, flashlight, and continuous focus when the device allows it
 

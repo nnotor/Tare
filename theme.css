@@ -125,11 +125,11 @@ input::placeholder { color: var(--faint); }
 .iconbtn.add { background: var(--ink); color: var(--bg); width: 36px; height: 36px; }
 .iconbtn.soft { background: var(--raised); width: 36px; height: 36px; }
 .weekstrip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
-.daychip { display: grid; justify-items: center; gap: 5px; min-height: 68px; padding: 8px 0 7px; border: 0; border-radius: 14px; background: none; color: var(--muted); font: 600 11px var(--body); cursor: pointer; }
+.daychip { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; gap: 5px; min-height: 68px; padding: 8px 0 7px; border: 0; border-radius: 14px; background: none; color: var(--muted); font: 600 11px var(--body); cursor: pointer; }
 .daychip:disabled { opacity: .3; cursor: default; }
 .daychip[aria-current="date"] { background: var(--panel); color: var(--ink); }
-.daychip svg { width: 32px; height: 32px; transform: rotate(-90deg); display: block; }
-.daywrap { position: relative; display: grid; place-items: center; width: 32px; height: 32px; }
+.daychip svg { width: 100%; height: 100%; transform: rotate(-90deg); display: block; }
+.daywrap { position: relative; display: grid; place-items: center; width: min(32px, 100%); aspect-ratio: 1; }
 .daywrap b { position: absolute; font-size: 12px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
 
 /* Dashboard */
@@ -367,6 +367,11 @@ html[data-rail] #toast { bottom: calc(16px + var(--safe-bottom)); }
   html[data-rail] nav { gap: 2px; }
   html[data-rail] nav button, html[data-rail] nav button[aria-current="page"] { min-height: 46px; }
 }
+/* A rail shorter than about 600pt (outer screen turned sideways, Split View, a short window) cannot hold the status
+   area, back and forward, and five tabs without stacking them on each other, so back and forward return to the page header. */
+@media (max-height: 600px) {
+  html[data-rail] .weeknav { position: static; flex-direction: row; gap: 8px; }
+}
 @media (max-height: 540px) {
   html[data-rail] nav button, html[data-rail] nav button[aria-current="page"] { min-height: 42px; font-size: 0; gap: 0; }
 }
@@ -383,6 +388,21 @@ html.small .weigh { grid-template-columns: minmax(0, 1fr) 96px auto; }
 html.tiny .seg button { padding-inline: 6px; font-size: 12.5px; }
 html.tiny .form > .half:has(.servrow) { grid-column: 1 / -1; }
 html.tiny .fasttime b { font-size: 24px; }
+html.tiny .macros { gap: 8px; }
+html.tiny .macrocol b small { display: block; margin-top: 2px; font-size: 11px; }
+html.tiny .weigh { grid-template-columns: minmax(0, 1fr) 84px auto; }
+/* A grid stack keeps its children inside the card, so one wide header cannot push rows past the edge */
+.stack { grid-template-columns: minmax(0, 1fr); }
+
+/* iPhone Duo's outer screen moves the clock into the side rail and reports no top safe area, so the screen's rounded
+   corners start right at the top edge. html.flattop (set by syncRail) gives titles and close buttons room below them. */
+html.flattop { --safe-top: 14px; }
+
+/* The food chooser pinned to the bottom of the add sheet keeps its buttons above the home indicator.
+   With the keyboard up (html.kb) the sheet ends at the keyboard, so that space is not needed. */
+#chooser:not(:empty) { padding-bottom: calc(8px + var(--safe-bottom)); }
+html.kb dialog .dlgbody { padding-bottom: 16px; }
+html.kb #chooser:not(:empty) { bottom: -16px; padding-bottom: 8px; }
 
 
 /* Describe a meal and recipe import */
