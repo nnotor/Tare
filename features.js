@@ -1,5 +1,5 @@
 /* Tare feature module: coaching programs, recipes, label scanning, tracking, and insights. */
-window.TARE_FEATURES_BUILD = "23";
+window.TARE_FEATURES_BUILD = "24";
 // A page from an older release cannot safely run this code, so reload it into the matching version.
 if (window.TARE_BUILD !== window.TARE_FEATURES_BUILD && !window.repairTareBuild) {
   try {
@@ -115,10 +115,12 @@ let watchedDay = "";
 function syncToday() {
   const now = today();
   if (now === watchedDay) return;
-  // An open add or edit sheet keeps logging to the day it was opened for.
-  if (cursor === watchedDay && !$("#dlg")?.open) cursor = now;
+  // An open add or edit sheet keeps logging to the day it was opened for. The day change waits until it closes,
+  // so the Log still moves to the new day afterward instead of staying on yesterday.
+  if ($("#dlg")?.open) return;
+  if (cursor === watchedDay) cursor = now;
   watchedDay = now;
-  if (!$("#dlg")?.open) render();
+  render();
 }
 function startDayWatch() {
   watchedDay = today();
@@ -857,8 +859,10 @@ function openEdit(id) {
 }
 function updateEditTotal() {
   const el = $("#editTotal"); if (!el) return;
-  const q = num($("#eqty").value), v = id => num($(id).value) * q;
-  el.textContent = `Total: ${fmt(v("#ck"))} kcal · ${Math.round(v("#cp"))}P ${Math.round(v("#cc"))}C ${Math.round(v("#cf"))}F`;
+  // Fields left as shown keep the exact logged totals, as saveEdit does, so the preview matches the log
+  const q = num($("#eqty").value), e = editing && peek(editing.date).foods.find(x => x.id === editing.id);
+  const v = (id, k) => e && q === editing.shown?.qty && $(id).value === editing.shown[k] ? num(e[k]) : num($(id).value) * q;
+  el.textContent = `Total: ${fmt(v("#ck", "kcal"))} kcal · ${Math.round(v("#cp", "p"))}P ${Math.round(v("#cc", "c"))}C ${Math.round(v("#cf", "f"))}F`;
 }
 function saveEdit(d) {
   const err = $("#editErr"), fail = text => { err.textContent = text; err.hidden = false; };
@@ -1216,7 +1220,14 @@ function fastCard() {
   return `<section class="card fastcard" id="fastCard"><div class="mealtitle"><div><h2>Fasting</h2><p>${!last ? "Not fasting" : now - last < 6e4 ? "Last food just now" : `Last food ${esc(duration(now - last))} ago`}</p></div><button class="btn small" data-pro="faststart">Start now</button></div>
   <div class="fastrow">${last && now - last >= 10 * 6e4 ? `<button class="btn small" data-pro="faststart" data-from="meal">Start from last food</button>` : ""}${goalSelect(false)}</div>${history}</section>`;
 }
-function refreshFastCard() { const el = $("#fastCard"); if (el && !$("#fastStartAt:focus") && !$("#fastGoal:focus")) el.outerHTML = fastCard(); }
+function refreshFastCard() {
+  const el = $("#fastCard"); if (!el) return;
+  if (!$("#fastStartAt:focus") && !$("#fastGoal:focus")) { el.outerHTML = fastCard(); return; }
+  // A field in the card is still focused (iOS keeps focus after its picker closes): update the times and
+  // progress around it in place, so a new start time or goal shows at once without closing the picker.
+  const t = document.createElement("template"); t.innerHTML = fastCard(); const next = t.content.firstElementChild;
+  for (const sel of [".mealtitle p", ".fasttime b", ".bar", ".fastlog"]) { const a = el.querySelector(sel), b = next.querySelector(sel); if (a && b) a.replaceWith(b); }
+}
 function startFast(fromMeal) { const f = fastingData(); f.start = fromMeal && lastMealMs() || Date.now(); touch(); render(); }
 function endFast() {
   const f = fastingData(); if (!f.start) return;
