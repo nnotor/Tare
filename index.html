@@ -149,7 +149,7 @@ dialog::before{content:"";position:absolute;inset:0 0 auto;height:var(--safe-top
 <dialog id="dlg" aria-label="Add food"></dialog>
 <input id="importFile" type="file" accept="application/json,.json" hidden>
 
-<script>window.TARE_BUILD="22";window.repairTareBuild=function(){try{const key="tare-build-repair",tries=Number(sessionStorage.getItem(key)||0);if(tries>=2)return false;sessionStorage.setItem(key,String(tries+1));const reload=()=>location.reload(),worker=navigator.serviceWorker;if(worker)worker.getRegistration().then(r=>r&&r.update()).catch(()=>{}).finally(()=>setTimeout(reload,700));else reload();return true}catch(e){return false}}</script>
+<script>window.TARE_BUILD="23";window.repairTareBuild=function(){try{const key="tare-build-repair",tries=Number(sessionStorage.getItem(key)||0);if(tries>=2)return false;sessionStorage.setItem(key,String(tries+1));const reload=()=>location.reload(),worker=navigator.serviceWorker;if(worker)worker.getRegistration().then(r=>r&&r.update()).catch(()=>{}).finally(()=>setTimeout(reload,700));else reload();return true}catch(e){return false}}</script>
 <script src="features.js"></script>
 <script>if(window.TARE_FEATURES_BUILD!==window.TARE_BUILD)window.repairTareBuild();else try{sessionStorage.removeItem("tare-build-repair")}catch(e){}</script>
 <script>
@@ -497,21 +497,34 @@ document.addEventListener("submit",ev=>{ev.preventDefault();const f=ev.target,t=
     const hadWeight=weights().length>0,edited=f.querySelector("#kg")?.dataset.edited==="1";if(w>0&&(was||!hadWeight||edited)){day(today()).w=+kg.toFixed(3)}if(!off)noteGoalChange(old.mode==="off"?0:old.goal,S.profile.goal,was);S.profile.plan=targets();setup=false;cursor=today();if(was){view="log"}touchAll();render();scrollTo(0,0)}});
 $("#importFile").addEventListener("change",async ev=>{const file=ev.target.files[0];ev.target.value="";if(!file)return;try{restoreBackup(JSON.parse(await file.text()))}catch(e){setSave("That file is not a Tare backup.")}});
 addEventListener("hashchange",()=>{route(true);rememberView();render()});
-let rt;addEventListener("resize",()=>{clearTimeout(rt);rt=setTimeout(()=>{if(view==="trends")drawCharts()},150)});
+// Safari can keep layout heights from the previous width after the screen width changes (unfolding iPhone Duo, rotating),
+// which leaves text spilling over the rows around it. Hiding the page for one layout pass rebuilds it at the new width.
+let lastWidth=innerWidth;
+function relayout(){const m=$("#main");if(!m)return;const y=scrollY,a=document.activeElement,inside=a&&m.contains(a);m.style.display="none";void m.offsetHeight;m.style.display="";scrollTo(0,y);if(inside)a.focus({preventScroll:true})}
+let rt;addEventListener("resize",()=>{if(innerWidth!==lastWidth){lastWidth=innerWidth;requestAnimationFrame(relayout);setTimeout(relayout,300)}clearTimeout(rt);rt=setTimeout(()=>{if(view==="trends")drawCharts()},150)});
 {const dlg=$("#dlg"),nativeClose=dlg.close.bind(dlg);dlg.close=(...args)=>{stopScan();nativeClose(...args)};dlg.addEventListener("cancel",()=>stopScan());dlg.addEventListener("close",()=>stopScan())}
 addEventListener("pagehide",()=>stopScan());
 // Keep the add-food window above the keyboard and matched to the current fold state.
 // iPhone Duo's outer display keeps the clock and every app's controls in a side rail, which iOS reports as a wide side safe area.
 // When it is there, Tare moves its tabs and its back, forward, and close buttons into the rail like a Duo app.
 let railWidth=0;
-function syncRail(){const probe=document.createElement("div");probe.style.cssText="position:fixed;visibility:hidden;pointer-events:none;padding-left:var(--safe-left);padding-right:var(--safe-right)";document.body.append(probe);const cs=getComputedStyle(probe),l=parseFloat(cs.paddingLeft)||0,r=parseFloat(cs.paddingRight)||0;probe.remove();const side=r>=70?"right":l>=70?"left":"",root=document.documentElement;railWidth=side==="right"?r:side==="left"?l:0;if(side)root.dataset.rail=side;else delete root.dataset.rail;
+let insets={t:0,r:0,b:0,l:0};
+function syncRail(){const probe=document.createElement("div");probe.style.cssText="position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)";document.body.append(probe);const cs=getComputedStyle(probe),t=parseFloat(cs.paddingTop)||0,l=parseFloat(cs.paddingLeft)||0,r=parseFloat(cs.paddingRight)||0,b=parseFloat(cs.paddingBottom)||0;probe.remove();insets={t,r,b,l};const side=r>=70?"right":l>=70?"left":"",root=document.documentElement;railWidth=side==="right"?r:side==="left"?l:0;if(side)root.dataset.rail=side;else delete root.dataset.rail;
+  // With the clock in the side rail, iOS reports no top safe area, so content would start under the rounded top corners.
+  // A home screen app on a regular iPhone always has a top inset for the status bar, so a zero inset there means the same thing.
+  root.classList.toggle("flattop",t<6&&(!!side||navigator.standalone===true));
   // Layout follows the width left for content after the safe areas, not a particular screen size.
   const content=root.clientWidth-Math.max(16,l)-Math.max(16,r);root.classList.toggle("narrow",content<=388);root.classList.toggle("small",content<=348);root.classList.toggle("tiny",content<=328);if(typeof fitAddTabs==="function")fitAddTabs()}
-const railText=()=>railWidth?` · side rail: ${document.documentElement.dataset.rail} ${Math.round(railWidth)}px`:"";
-function syncViewport(){const v=window.visualViewport;if(!v)return;const root=document.documentElement,s=root.style;s.setProperty("--app-h",Math.round(v.height)+"px");s.setProperty("--vv-top",Math.round(v.offsetTop)+"px");root.classList.toggle("short",v.height<480)}
+// Screen details for Plan's status line, so layout problems on a particular phone can be described exactly.
+const railText=()=>{const v=window.visualViewport,i=insets,n=x=>Math.round(x);return ` · screen: ${screen.width}×${screen.height} · window: ${innerWidth}×${innerHeight}${v?` · visible: ${n(v.width)}×${n(v.height)}`:""} · safe area: top ${n(i.t)}, right ${n(i.r)}, bottom ${n(i.b)}, left ${n(i.l)}${railWidth?` · side rail: ${document.documentElement.dataset.rail} ${n(railWidth)}px`:" · side rail: none"}`};
+function syncViewport(){const v=window.visualViewport;if(!v)return;const root=document.documentElement,s=root.style;s.setProperty("--app-h",Math.round(v.height)+"px");s.setProperty("--vv-top",Math.round(v.offsetTop)+"px");root.classList.toggle("short",v.height<480);root.classList.toggle("kb",v.height<root.clientHeight-120)}
 if(window.visualViewport){visualViewport.addEventListener("resize",syncViewport);visualViewport.addEventListener("scroll",syncViewport);addEventListener("orientationchange",syncViewport);syncViewport()}
 document.addEventListener("visibilitychange",()=>{if(document.hidden&&M&&["live","starting"].includes(M.scan?.state)){stopScan();setScan({state:"idle"})}});
 syncRail();addEventListener("resize",syncRail);addEventListener("orientationchange",syncRail);
+// iOS can apply the side rail's safe area a moment after launch without any resize event, so a relaunched app missed the rail.
+// These probes are sized by the safe areas, so a ResizeObserver hears every change to them.
+if(window.ResizeObserver){const ro=new ResizeObserver(()=>syncRail());for(const [w,h] of [["left","right"],["top","bottom"]]){const p=document.createElement("div");p.setAttribute("aria-hidden","true");p.style.cssText=`position:fixed;left:0;top:0;visibility:hidden;pointer-events:none;width:env(safe-area-inset-${w},0px);height:env(safe-area-inset-${h},0px)`;document.body.append(p);ro.observe(p)}}
+addEventListener("pageshow",syncRail);document.addEventListener("visibilitychange",()=>{if(!document.hidden)syncRail()});for(const ms of [250,1000,2500])setTimeout(syncRail,ms);
 load();
 startDayWatch();
 warmScanner();
