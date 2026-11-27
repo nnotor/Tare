@@ -193,7 +193,11 @@ input::placeholder { color: var(--faint); }
 .mealtitle h2, .mealtitle h3 { margin: 0; font: 700 17px/1.2 var(--display); letter-spacing: -.02em; }
 .mealtitle p { margin: 2px 0 0; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .mealactions { display: flex; gap: 6px; flex: none; }
-.entry { grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 2px; border-top: 1px solid var(--line); padding-block: 5px; }
+/* A food row is a flex row, not a grid: Safari kept a grid row's old height after the screen width changed
+   (unfolding iPhone Duo, rotating), so wrapped names spilled over the rows around them */
+.entry { display: flex; align-items: center; gap: 2px; border-top: 1px solid var(--line); padding-block: 5px; }
+.entry > .entrymain { flex: 1 1 0; min-width: 0; }
+.entry > :not(.entrymain) { flex: none; }
 .entrymain b { font-weight: 620; font-size: 14.5px; }
 .entry small { font-size: 12px; margin-top: 1px; }
 .entrykcal { font-weight: 700; font-variant-numeric: tabular-nums; padding-inline: 6px; }
